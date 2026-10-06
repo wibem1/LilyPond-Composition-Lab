@@ -20,7 +20,7 @@ function renderResults(){
  for(const id of ['play','pause','stop','saveMidi','position'])$(id).disabled=!state.midiUrl;
  $('diagnosis').disabled=!state.runId;$('compiler').textContent=state.compiler||'Noch nicht kompiliert.';
  $('playerTitle').textContent=state.midiUrl?$('title').value:'Noch keine aktuelle MIDI-Datei geladen.';
- $('costs').textContent='KI-Kosten dieses Laufs: $'+Number(state.costs?.composition||0).toFixed(6)+' · Compiler ohne zusätzlichen KI-Aufruf.';
+ $('costs').textContent='KI-Kosten dieses Laufs: $'+(Number(state.costs?.composition||0)+Number(state.costs?.realisation||0)).toFixed(6)+' · davon Oktavkorrektur $'+Number(state.costs?.realisation||0).toFixed(6);
 }
 function apply(e){if(e.system===TECHNICAL_SYSTEM)e={...e,system:SYSTEM};player.stop();ready=false;state={...state,...e,historyId:e.historyId||e.id||'',midiUrl:e.midiUrl||'',pages:e.pages||[],downloads:e.downloads||[]};for(const [id,key] of [['task','task'],['title','title'],['code','techout'],['system','system'],['tokens','tokens1']])if(e[key]!==undefined)$(id).value=e[key];modelChoice=e.compositionModel||modelChoice;selectModel(modelChoice);renderResults();}
 function selectModel(id){const m=catalog.find(x=>x.id===id);if(!m)return;$('provider').value=m.provider;populateModels(id);}
@@ -29,17 +29,18 @@ function prices(){const m=catalog.find(x=>x.id===$('model').value);$('price').te
 async function models(){try{const d=await api('/api/models');catalog=d.models;const providers=[...new Set(catalog.map(m=>m.provider))].sort();$('provider').replaceChildren(...providers.map(x=>new Option(x,x)));selectModel(modelChoice||catalog.find(x=>x.id.startsWith('anthropic/claude-sonnet-'))?.id||catalog[0]?.id);if(!$('model').value)populateModels();$('catalogStatus').textContent=catalog.length+' Textmodelle verfügbar.'}catch(e){$('catalogStatus').textContent='Modellkatalog: '+e.message;}}
 async function refreshHistory(){const d=await api('/api/history');$('history').replaceChildren(...d.entries.map(e=>new Option(e.title+' · '+new Date(e.updatedAt).toLocaleString('de-DE'),e.id)));if(state.historyId)$('history').value=state.historyId;}
 async function saveHistory(){if(!$('code').value.trim())return;const d=await api('/api/history',payload());state.historyId=d.entry.id;await refreshHistory();await persist();}
-async function compiledResult(d){ready=false;player.stop();state.midiUrl=d.url||'';state.pages=d.pages||[];state.compiler=[d.error,d.warning,d.rangeCheck?.status==='passed'?'Tonumfangprüfung bestanden (klingende MIDI-Töne).':'',d.logs].filter(Boolean).join('\n')||'Kompilierung erfolgreich.';state.downloads=state.downloads.filter(x=>x.url.endsWith('.ly'));if(d.url)state.downloads.push({label:'MIDI-Datei',url:d.url});renderResults();}
+async function compiledResult(d){ready=false;player.stop();state.midiUrl=d.url||'';state.pages=d.pages||[];state.compiler=[d.error,d.warning,d.repair,d.rangeCheck?.status==='passed'?'Tonumfangprüfung bestanden (klingende MIDI-Töne).':'',d.logs].filter(Boolean).join('\n')||'Kompilierung erfolgreich.';state.downloads=state.downloads.filter(x=>x.url.endsWith('.ly'));if(d.url)state.downloads.push({label:'MIDI-Datei',url:d.url});renderResults();}
 $('compose').onclick=async()=>{
  if(busy)return;if(!$('model').value)return message('Bitte zuerst ein Modell auswählen.');
  const task=$('task').value;if(!task.trim())return message('Bitte einen Auftrag eingeben.');
  setBusy(true);state.runId=crypto.randomUUID().replaceAll('-','');state.historyId='';state.costs={composition:0,realisation:0};renderResults();message('Compiler wird vor dem KI-Aufruf geprüft …');
  try{
   const d=await api('/api/run',{runId:state.runId,key:$('key').value,model:$('model').value,task,system:$('system').value,maxTokens:Number($('tokens').value),title:$('title').value});
-  $('code').value=d.answer;$('title').value=d.title;state.historyId=d.historyId;state.downloads=d.downloads;state.costs={composition:Number(d.usage?.cost)||0,realisation:0};
+  $('code').value=d.answer;$('title').value=d.title;state.historyId=d.historyId;state.downloads=d.downloads;state.costs=d.costs||{composition:Number(d.usage?.cost)||0,realisation:0};
   await compiledResult(d.compiled);await persist();await refreshHistory();
   message(d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
   if(d.finish_reason==='length')message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
+  if(d.compiled.repair)message($('status').textContent+'\n'+d.compiled.repair);
   if(d.titleWarning)message($('status').textContent+'\n'+d.titleWarning);
  if(d.compiled.warning)message($('status').textContent+'\n'+d.compiled.warning);
   else if(d.compiled.rangeCheck?.status==='passed')message($('status').textContent+'\nTonumfangprüfung bestanden.');

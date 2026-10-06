@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {octaveOnlyChange} from '../src/octave-repair.mjs';
+const original='\\version "2.24.0"\n\\header { title = "Licht" }\nleft = \\relative c { \\key c \\minor c,8 g c ees | aes,8 ees aes c }';
+assert(octaveOnlyChange(original,original.replace('aes,8','aes8')));
+assert(octaveOnlyChange(original,original.replace('relative c {','relative c\' {')));
+assert(!octaveOnlyChange(original,original));
+for(const [a,b] of [['c,8','d,8'],['c,8','c,4'],['c,8','r8'],['c,8','c,8\\p'],['c \\minor','c \\major'],['Licht','Nacht'],['relative c','absolute'],['left =','bass ='],['relative c','relativec']])assert(!octaveOnlyChange(original,original.replace(a,b)),a+' → '+b);
+assert(!octaveOnlyChange('\\header { title = "a\'" } c4','\\header { title = "a" } c\'4'));
+assert(!octaveOnlyChange('% c\'\nc4','% c\nc\'4'));
+console.log('PASS: accept octave marks only; reject changes to pitch classes, rhythm, rests, dynamics, key, title, notation mode, identifiers, comments and token boundaries.');

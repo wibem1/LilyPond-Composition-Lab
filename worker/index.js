@@ -1,6 +1,7 @@
-const VERSION="0.1.9";
+const VERSION="0.1.10";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
+import {octaveOnlyChange} from '../src/octave-repair.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
@@ -193,6 +194,31 @@ async function compileLilyMidi(env,code,title,runId,ensemble=[]){
   return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
+async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled){
+ const messages=[{role:'system',content:'Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Ändere ausschließlich Apostrophe und Kommas an Tonhöhen, auch am Anker einer relative-Anweisung. Behalte relative-Anweisungen bei. Keine Neukomposition. Alle Notennamen, Vorzeichen, Dauern, Pausen, Stimmen, Instrumente, Dynamik, Tempo, Titel und sonstigen Anweisungen müssen unverändert bleiben. Beseitige kumulative Oktavdrift und halte jede Stimme in einer sinnvollen spielbaren Lage ihres Instruments. Antworte nur mit dem vollständigen LilyPond-Code.'},{role:'user',content:compiled.rangeCheck.warning+'\n\n'+code}];
+ let cost=0;
+ await log(env,'anfrage',runId,{stage:'realisation',operation:'octave-repair',model,messages,max_tokens:maxTokens});
+ try{
+  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens:maxTokens,stream:false,usage:{include:true}})});
+  rejectRedirect(r);const d=await r.json();
+  if(!r.ok)throw Error(d.error?.message||'Oktavkorrektur fehlgeschlagen.');
+  cost=Number(d.usage?.cost)||0;
+  let content=d.choices?.[0]?.message?.content;
+  if(Array.isArray(content))content=content.filter(x=>x.type==='text').map(x=>x.text).join('\n');
+  const candidate=String(content||'').trim().replace(/^```(?:lilypond|ly)?\s*\n/i,'').replace(/\n```\s*$/,'').trim();
+  await log(env,'antwort',runId,{stage:'realisation',operation:'octave-repair',model,answer:content,usage:d.usage||null,finish_reason:d.choices?.[0]?.finish_reason});
+  if(!octaveOnlyChange(code,candidate))throw Error('Korrektur verworfen: Es wurden nicht ausschließlich Oktavzeichen geändert.');
+  const checked=await compileLilyMidi(env,candidate,title,runId);
+  await log(env,'korrekturpruefung',runId,{operation:'octave-repair',source:candidate,...checked});
+  if(checked.error||!checked.url||checked.rangeCheck?.status!=='passed')throw Error('Korrektur verworfen: Kompilierung oder Tonumfangprüfung nicht bestanden.');
+  checked.repair='Oktavfehler korrigiert; ausschließlich Oktavzeichen geändert und Tonumfang erneut geprüft.';
+  await log(env,'korrektur',runId,{operation:'octave-repair',accepted:true});
+  return {code:candidate,compiled:checked,cost};
+ }catch(e){
+  await log(env,'korrektur',runId,{operation:'octave-repair',accepted:false,error:String(e.message).replaceAll(key,'[API-Schlüssel]')});
+  return {code,compiled:{...compiled,warning:compiled.warning+'\nAutomatische Oktavkorrektur nicht erfolgreich; Original erhalten.'},cost};
+ }
+}
 async function handle(req,env){
  const url=new URL(req.url),p=url.pathname;
  if(req.headers.get('Origin')&&req.headers.get('Origin')!==url.origin)return json({error:'Unzulässiger Ursprung.'},403);
@@ -265,7 +291,6 @@ async function run(req,env){
   const titleContext=[...new Set([...previousTitles,clean(b.title)].filter(t=>t&&!/^Unbenannte[ _]Komposition$/i.test(t)))];
   const max_tokens=Math.min(64000,Math.max(500,parseInt(b.maxTokens)||8000));
   const messages=[{role:'system',content:system},{role:'user',content:task}];
-  messages.push({role:'user',content:'Titelvergabe: Wähle für diese neue Komposition einen eigenen, passenden Titel im LilyPond-Header. Sofern der Auftrag keinen Titel vorgibt, verwende keinen der folgenden bereits verwendeten Titel erneut: '+JSON.stringify(titleContext.slice(-40))+'. Diese Angabe betrifft ausschließlich den Titel.'});
   const payload={model,messages,max_tokens,stream:false,usage:{include:true}};
   await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:'provider_default'});
   const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify(payload)});
@@ -313,13 +338,17 @@ async function run(req,env){
   if(title!==proposedTitle)code=code.replace(/\btitle\s*=\s*"([^"\n]+)"/,()=>`title = "${title}"`);
   if(usage)usage.cost=(Number(usage.cost)||0)+titleCost;
   base.title=title;base.techout=code;base.costs.composition+=titleCost;
-  if(code)downloads.push({label:'LilyPond-Datei',url:await saveFile(env,title,'ly',code)});
-  const compiled=code?await compileLilyMidi(env,code,title,runId):{error:'Die KI lieferte keinen LilyPond-Code.'};
+  let compiled=code?await compileLilyMidi(env,code,title,runId):{error:'Die KI lieferte keinen LilyPond-Code.'};
   await log(env,'kompilierung',runId,{source:code,...compiled});
+  if(compiled.rangeCheck?.instruments.some(x=>x.violations>0)){
+   const repaired=await repairOctaves(env,code,title,runId,key,model,max_tokens,compiled);
+   code=repaired.code;compiled=repaired.compiled;base.techout=code;base.costs.realisation+=repaired.cost;
+  }
+  if(code)downloads.push({label:'LilyPond-Datei',url:await saveFile(env,title,'ly',code)});
   if(compiled.url)downloads.push({label:'MIDI-Datei',url:compiled.url});
-  const entry={...base,id:saved.id,downloads,midiUrl:compiled.url||'',pages:compiled.pages||[],compiler:compiled.logs||compiled.error||''};
+  const entry={...base,id:saved.id,downloads,midiUrl:compiled.url||'',pages:compiled.pages||[],compiler:[compiled.error,compiled.warning,compiled.repair,compiled.logs].filter(Boolean).join('\n')};
   await saveHistory(env,entry);await putJson(env,'workspace/current.json',{...entry,historyId:saved.id});
-  return json({runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,titleWarning,finish_reason:finish,compiled,durationMs:Date.now()-started});
+  return json({runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,costs:base.costs,titleWarning,finish_reason:finish,compiled,durationMs:Date.now()-started});
  }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{error,status:e.status||null,providerError:e.providerError?.replaceAll(key||'\u0000','[API-Schlüssel]')||null,durationMs:Date.now()-started});return json({error,runId},e.status===401?401:502)}
 }
 export default {async fetch(request,env,ctx){try{return await handle(request,env)}catch(e){return json({error:e.name==='AbortError'?'Zeitüberschreitung beim Onlinedienst.':String(e.message||e)},e.status||500)}}};
