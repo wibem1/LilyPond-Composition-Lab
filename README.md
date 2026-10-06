@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.4
+# LilyPond Composition Lab v0.1.5
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -37,3 +37,5 @@ V0.1.2: Cloudflare-kompatibles redirect=manual für OpenRouter-Schlüsselprüfun
 V0.1.3: API-Schlüsselfeld als normales Textfeld mit ausgeschalteter Autokorrektur, Großschreibung und Autovervollständigung sowie Hinweisen an Passwortmanager. Kein password-Eingabefeld. Bereits verschlüsselt gespeicherte Schlüssel bleiben unverändert; die App liest den Schlüssel nicht in das Eingabefeld zurück. Browser-Verhalten auf Android ist nicht hier verifiziert.
 
 V0.1.4: AudioWorklet mit 17 Stereoausgängen statt einem Ausgang mit 34 Kanälen. Player-Quelltext wird bei jedem Build frisch eingebunden. Regressionstest verwendet die echte SpessaSynth-Bibliothek mit simuliertem Browser-Kanallimit und prüft Initialisierung sowie alle Ausgangsverbindungen. Android-Wiedergabe ist hier nicht am Gerät verifiziert.
+
+V0.1.5: Neue Kompositionen erhalten eine zusätzliche reine Titelanweisung mit bisherigen Namen. Wiederholte Titel bekommen als Rückfall eine freie Nummer; Header, Verlauf und Dateien verwenden denselben Titel. Musikalischer Systemprompt bleibt unverändert. Keine zusätzliche KI-Anfrage.

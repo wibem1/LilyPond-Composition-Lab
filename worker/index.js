@@ -1,4 +1,4 @@
-const VERSION="0.1.4";
+const VERSION="0.1.5";
 import {PAGE,ASSETS} from "./generated.js";
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
@@ -249,8 +249,11 @@ async function run(req,env){
   const task=clean(b.task);if(!task.trim())throw Error('Kompositionsauftrag fehlt.');
   try{await rendererReady()}catch(e){await log(env,'kostenstopp',runId,{error:e.message,durationMs:Date.now()-started});return json({error:e.message+' Keine KI wurde aufgerufen.',runId},412)}
   const system=clean(b.system).trim()||DEFAULT_SYSTEM;
+  const previousTitles=[...new Set((await listAll(env,'history/')).map(o=>{try{return JSON.parse(o.customMetadata?.summary||'{}').title||''}catch{return ''}}).filter(Boolean))];
+  const titleContext=[...new Set([...previousTitles,clean(b.title)].filter(t=>t&&!/^Unbenannte[ _]Komposition$/i.test(t)))];
   const max_tokens=Math.min(64000,Math.max(500,parseInt(b.maxTokens)||8000));
   const messages=[{role:'system',content:system},{role:'user',content:task}];
+  messages.push({role:'user',content:'Titelvergabe: Wähle für diese neue Komposition einen eigenen, passenden Titel im LilyPond-Header. Sofern der Auftrag keinen Titel vorgibt, verwende keinen der folgenden bereits verwendeten Titel erneut: '+JSON.stringify(titleContext.slice(-40))+'. Diese Angabe betrifft ausschließlich den Titel.'});
   const payload={model,messages,max_tokens,stream:false,usage:{include:true}};
   await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:'provider_default'});
   const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify(payload)});
@@ -260,8 +263,13 @@ async function run(req,env){
   let answer=response.choices?.[0]?.message?.content;
   if(Array.isArray(answer))answer=answer.filter(x=>x.type==='text').map(x=>x.text).join('\n');
   answer=typeof answer==='string'?answer:'';
-  const code=answer.trim().replace(/^```(?:lilypond|ly)?\s*\n/i,'').replace(/\n```\s*$/,'').trim();
-  const title=code.match(/\btitle\s*=\s*"([^"\n]+)"/)?.[1]||b.title;
+  let code=answer.trim().replace(/^```(?:lilypond|ly)?\s*\n/i,'').replace(/\n```\s*$/,'').trim();
+  const proposedTitle=compositionFilename(code.match(/\btitle\s*=\s*"([^"\n]+)"/)?.[1]||'Komposition');
+  const used=new Set(titleContext.map(t=>compositionFilename(t).toLocaleLowerCase('de')));
+  let title=proposedTitle,number=2;
+  while(used.has(title.toLocaleLowerCase('de')))title=proposedTitle.slice(0,90)+' · '+number++;
+  // Keep the visible score, saved source and history aligned if the model repeats a name.
+  code=code.replace(/\btitle\s*=\s*"([^"\n]+)"/,()=>`title = "${title}"`);
   const usage=response.usage||null,finish=response.choices?.[0]?.finish_reason||null;
   await log(env,'antwort',runId,{stage:'composition',model,answer,usage,finish_reason:finish,durationMs:Date.now()-started});
   const downloads=code?[{label:'LilyPond-Datei',url:await saveFile(env,title,'ly',code)}]:[];
