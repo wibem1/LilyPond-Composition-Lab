@@ -28,3 +28,9 @@ const indexedResult=applyOctaveEdits(indexed,JSON.stringify({edits:[{id:2,marks:
 assert(indexedResult.includes('b4 e4. dis8'));assert(octaveOnlyChange(indexed,indexedResult));
 for(const edits of [[{id:2,marks:1.2}],[{id:999,marks:0}],[{id:2,marks:9}],[{id:2,marks:0},{id:2,marks:1}],[{id:'2',marks:0}]])assert.throws(()=>applyOctaveEdits(indexed,JSON.stringify({edits})));
 console.log('PASS: numbered octave changes preserve commands, comments, strings, pitch classes and rhythm; reject duplicate IDs, missing IDs and invalid marks.');
+
+assert.equal(applyOctaveEdits('c4 c4 c4',JSON.stringify({edits:[{id:1,marks:1}]})),"c4 c'4 c4");
+const indexedActual=JSON.parse(await readFile(new URL('./fixtures/gemini-indexed-octaves.json',import.meta.url),'utf8'));
+assert.equal(applyOctaveEdits(indexedActual.source,indexedActual.response),indexedActual.corrected);
+assert(octaveOnlyChange(indexedActual.source,indexedActual.corrected));
+console.log('PASS: real Gemini numbered repair for c43b07ef; exact accepted source reproduced. Live MIDI: 140 notes, E1–C6, duration 31.304304 s.');

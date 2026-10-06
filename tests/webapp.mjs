@@ -72,7 +72,7 @@ rendererMidi=driftMidi;
 const drift=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Oktavtest',runId:'88889999aaaabbbb'}});
 assert(drift.warning.includes('Tonumfang prüfen'));assert(drift.url);assert.equal((await call(drift.url)).status,200);assert(drift.pages.length);rendererMidi=null;
 // Repair runs only after detected range violations; costs are logged separately.
-rendererMidi=driftMidi;repairMidi=(await readFile(new URL('./fixtures/luna-octaves-corrected.mid',import.meta.url))).toString('base64');repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});namingDown=true;
+rendererMidi=driftMidi;repairMidi=(await readFile(new URL('./fixtures/luna-octaves-corrected.mid',import.meta.url))).toString('base64');repairAnswer=JSON.stringify({edits:[{id:0,marks:2}]});namingDown=true;
 const repairIndex=requests.length;
 const repaired=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd1111'}});
 assert.equal(repaired.answer,answer.replace("c'4","c''4"));assert.equal(repaired.rawAnswer,answer);assert.equal(repaired.compiled.rangeCheck.status,'passed');assert(repaired.compiled.repair);assert.equal(repaired.costs.realisation,.0001);
@@ -81,13 +81,13 @@ const rd=await (await call('/api/diagnosis?runId=aaaaccccdddd1111')).json();asse
 assert.equal((await value('/api/history/'+repaired.historyId)).entry.techout,answer.replace("c'4","c''4"));assert.equal((await value('/api/workspace')).workspace.costs.realisation,.0001);
 // A candidate changing the music is rejected and cannot overwrite the original.
 repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"d''4"}]});const unsafe=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd2222'}});assert.equal(unsafe.answer,answer);assert(unsafe.compiled.repairFailed);assert(unsafe.compiled.warning.includes('Original erhalten'));assert.equal(unsafe.costs.realisation,.0002);
-repairFinish='length';repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});const truncated=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd5555'}});assert.equal(truncated.answer,answer);assert(truncated.compiled.repairFailed);repairFinish='stop';
-assert.equal(requests.find(r=>r.messages[0].content.startsWith('Repariere ausschließlich')).reasoning.effort,'medium');assert(!('reasoning' in requests[0]));
+repairFinish='length';repairAnswer=JSON.stringify({edits:[{id:0,marks:2}]});const truncated=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd5555'}});assert.equal(truncated.answer,answer);assert(truncated.compiled.repairFailed);repairFinish='stop';
+assert.equal(requests.find(r=>r.messages[0].content.startsWith('Repariere ausschließlich')).reasoning.effort,'medium');assert.equal(requests.find(r=>r.messages[0].content.startsWith('Repariere ausschließlich')).max_tokens,24000);assert(!('reasoning' in requests[0]));
 // An octave-only candidate which remains out of range is also rejected.
-repairMidi=null;repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});const stillBad=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd3333'}});assert.equal(stillBad.answer,answer);assert(stillBad.compiled.warning.includes('Original erhalten'));
+repairMidi=null;repairAnswer=JSON.stringify({edits:[{id:0,marks:2}]});const stillBad=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd3333'}});assert.equal(stillBad.answer,answer);assert(stillBad.compiled.warning.includes('Original erhalten'));
 // Register drift triggers repair even when the absolute playable range passes.
 const celloFixture=JSON.parse(await readFile(new URL('./fixtures/cello-register-events.json',import.meta.url),'utf8'));
-rendererMidi=celloFixture.original.midiBase64;repairMidi=celloFixture.corrected.midiBase64;repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});
+rendererMidi=celloFixture.original.midiBase64;repairMidi=celloFixture.corrected.midiBase64;repairAnswer=JSON.stringify({edits:[{id:0,marks:2}]});
 const registerFixed=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd4444'}});
 assert(registerFixed.compiled.repair);assert.equal(registerFixed.compiled.rangeCheck.status,'passed');assert.equal(registerFixed.compiled.registerCheck.status,'passed');assert.equal(registerFixed.costs.realisation,.0001);
 const manual=await value('/api/repair-octaves',{method:'POST',data:{code:answer,model:'test/model',runId:'aaaaccccdddd6666'}});assert(manual.compiled.repair);assert.equal(manual.code,answer.replace("c'4","c''4"));assert.equal(manual.cost,.0001);
