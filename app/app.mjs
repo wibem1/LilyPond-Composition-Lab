@@ -10,7 +10,7 @@ async function api(path,data,method){const r=await fetch(path,{method:method||(d
 function payload(){return {...state,id:state.historyId,title:$('title').value,task:$('task').value,system:$('system').value,techout:$('code').value,draft:'',format:'lilypond',tokens1:$('tokens').value,compositionModel:$('model').value||modelChoice,realisationModel:'',compiler:$('compiler').textContent};}
 function queueSave(){if(restoring)return;clearTimeout(timer);timer=setTimeout(()=>persist(),550);}
 function persist(){if(restoring)return Promise.resolve();const workspace=payload();saveChain=saveChain.catch(()=>{}).then(()=>api('/api/workspace',{workspace})).then(()=>{$('memoryStatus').textContent='Letzter Arbeitsstand gespeichert.'}).catch(e=>{$('memoryStatus').textContent='Arbeitsstand konnte nicht gespeichert werden: '+e.message;throw e});return saveChain;}
-function setBusy(v){busy=v;for(const id of ['compose','compile','new','import','openHistory','deleteHistory','saveHistory'])$(id).disabled=v;}
+function setBusy(v){busy=v;for(const id of ['compose','compile','repair','new','import','openHistory','deleteHistory','saveHistory'])$(id).disabled=v;}
 function message(s){$('status').textContent=s;}
 function invalidate(){player.stop();ready=false;state.midiUrl='';state.pages=[];state.downloads=[];renderResults();$('scoreStatus').textContent='Code geändert. Bitte neu kompilieren.';queueSave();}
 function renderResults(){
@@ -38,13 +38,20 @@ $('compose').onclick=async()=>{
   const d=await api('/api/run',{runId:state.runId,key:$('key').value,model:$('model').value,task,system:$('system').value,maxTokens:Number($('tokens').value),title:$('title').value});
   $('code').value=d.answer;$('title').value=d.title;state.historyId=d.historyId;state.downloads=d.downloads;state.costs=d.costs||{composition:Number(d.usage?.cost)||0,realisation:0};
   await compiledResult(d.compiled);await persist();await refreshHistory();
-  message(d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
+  message(d.compiled.repairFailed?'Oktavkorrektur fehlgeschlagen. Das Stück ist weiterhin fehlerhaft.':d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
   if(d.finish_reason==='length')message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
   if(d.compiled.repair)message($('status').textContent+'\n'+d.compiled.repair);
   if(d.titleWarning)message($('status').textContent+'\n'+d.titleWarning);
  if(d.compiled.warning)message($('status').textContent+'\n'+d.compiled.warning);
   else if(d.compiled.rangeCheck?.status==='passed')message($('status').textContent+'\nTonumfangprüfung bestanden.');
  }catch(e){message('Fehler: '+e.message);if(e.details&&/Schlüssel|Anmeldung/.test(e.message)){$('connectionDetails').open=true;$('connection').scrollIntoView({behavior:'smooth'});$('keyStatus').textContent=e.message;}queueSave()}finally{setBusy(false);renderResults()}
+};
+$('repair').onclick=async()=>{
+ if(busy||!$('code').value.trim())return;setBusy(true);state.runId||=crypto.randomUUID().replaceAll('-','');message('Oktavlagen werden geprüft und bei Bedarf korrigiert …');
+ try{const d=await api('/api/repair-octaves',{code:$('code').value,task:$('task').value,title:$('title').value,runId:state.runId,model:$('model').value,key:$('key').value});
+  if(d.code!==$('code').value){$('code').value=d.code;state.downloads=[];}state.costs.realisation=(Number(state.costs.realisation)||0)+d.cost;
+  await compiledResult(d.compiled);await saveHistory();await persist();message(d.compiled.repairFailed?'Oktavkorrektur fehlgeschlagen. Das Stück ist weiterhin fehlerhaft.':d.compiled.repair||d.compiled.warning||'Oktavprüfung bestanden.');
+ }catch(e){message('Oktavkorrektur fehlgeschlagen: '+e.message);}finally{setBusy(false);renderResults();}
 };
 $('compile').onclick=async()=>{if(busy)return;const code=$('code').value;if(!code.trim())return message('Bitte LilyPond-Code eingeben oder öffnen.');setBusy(true);state.runId||=crypto.randomUUID().replaceAll('-','');message('LilyPond wird kompiliert …');try{const d=await api('/api/compile-lilypond',{code,title:$('title').value,task:$('task').value,runId:state.runId});await compiledResult(d);await saveHistory();message('Kompiliert · '+d.pages.length+' Seite(n).'+(d.warning?'\n'+d.warning:d.rangeCheck?.status==='passed'?'\nTonumfangprüfung bestanden.':''))}catch(e){state.compiler=[e.message,e.details?.logs].filter(Boolean).join('\n');invalidate();$('compiler').textContent=state.compiler;message('Compilerfehler: '+e.message);await saveHistory().catch(x=>{$('memoryStatus').textContent=x.message})}finally{setBusy(false);renderResults()}};
 $('saveLy').onclick=()=>{const url=URL.createObjectURL(new Blob([$('code').value],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=($('title').value.replace(/[\\/:*?"<>|]/g,'_')||'Komposition')+'.ly';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};

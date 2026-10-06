@@ -12,7 +12,7 @@ const env={BUCKET:new MemoryBucket(),LAB_KEY_ENCRYPTION_KEY:btoa('01234567890123
 const tiny=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-response.json',import.meta.url),'utf8')).result;
 const driftMidi=(await readFile(new URL('./fixtures/luna-octave-drift.mid',import.meta.url))).toString('base64');let rendererMidi=null;
 let paid=0,rendererDown=false,compileError=false,requests=[],rejectKey=false,redirectKey=false;
-let repairAnswer=null,repairMidi=null;
+let repairAnswer=null,repairMidi=null,repairFinish='stop';
 let namingAnswers=['Teststück · 2','Nächtlicher Dialog','Dämmerpfade'],namingDown=false;
 const answer='\\version "2.24.3"\n\\header { title = "Teststück" }\n\\score { { c\'4 d\' e\' f\' } \\layout {} \\midi {} }';
 class Socket extends EventTarget{
@@ -25,12 +25,12 @@ globalThis.fetch=async(url,opts={})=>{
  if(String(url).includes('render.hacklily.org'))return rendererDown?new Response('unavailable',{status:503}):{webSocket:new Socket()};
  if(String(url).endsWith('/key')){assert.equal(opts.redirect,'manual');if(redirectKey)return new Response(null,{status:302,headers:{Location:'https://other.test'}});assert.equal(opts.headers.Authorization,'Bearer sk-or-v1-TESTKEY');return rejectKey?Response.json({error:{message:'Missing Authentication header'}},{status:401}):Response.json({data:{label:'test'}});}
  if(String(url).endsWith('/models'))return Response.json({data:[{id:'test/model',name:'Test',architecture:{output_modalities:['text']},pricing:{prompt:'0.000001',completion:'0.000002'}}]});
- if(String(url).endsWith('/chat/completions')){assert.equal(opts.redirect,'manual');paid++;const request=JSON.parse(opts.body);requests.push(request);assert.equal(opts.headers.Authorization,'Bearer sk-or-v1-TESTKEY');const naming=request.max_tokens===1000;if(naming&&namingDown)return Response.json({error:{message:'unavailable'}},{status:503});return Response.json({choices:[{message:{content:request.messages[0].content.startsWith('Repariere ausschließlich')?repairAnswer:naming?JSON.stringify({title:namingAnswers.shift()}):answer},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:80,cost:0.0001}})}
+ if(String(url).endsWith('/chat/completions')){assert.equal(opts.redirect,'manual');paid++;const request=JSON.parse(opts.body);requests.push(request);assert.equal(opts.headers.Authorization,'Bearer sk-or-v1-TESTKEY');const naming=request.max_tokens===1000;if(naming&&namingDown)return Response.json({error:{message:'unavailable'}},{status:503});return Response.json({choices:[{message:{content:request.messages[0].content.startsWith('Repariere ausschließlich')?repairAnswer:naming?JSON.stringify({title:namingAnswers.shift()}):answer},finish_reason:request.messages[0].content.startsWith('Repariere ausschließlich')?repairFinish:'stop'}],usage:{prompt_tokens:100,completion_tokens:80,cost:0.0001}})}
  throw Error('Unexpected outbound destination: '+url);
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.11'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.12'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -72,22 +72,25 @@ rendererMidi=driftMidi;
 const drift=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Oktavtest',runId:'88889999aaaabbbb'}});
 assert(drift.warning.includes('Tonumfang prüfen'));assert(drift.url);assert.equal((await call(drift.url)).status,200);assert(drift.pages.length);rendererMidi=null;
 // Repair runs only after detected range violations; costs are logged separately.
-rendererMidi=driftMidi;repairMidi=(await readFile(new URL('./fixtures/luna-octaves-corrected.mid',import.meta.url))).toString('base64');repairAnswer=answer.replace("c'4","c''4");namingDown=true;
+rendererMidi=driftMidi;repairMidi=(await readFile(new URL('./fixtures/luna-octaves-corrected.mid',import.meta.url))).toString('base64');repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});namingDown=true;
 const repairIndex=requests.length;
 const repaired=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd1111'}});
-assert.equal(repaired.answer,repairAnswer);assert.equal(repaired.rawAnswer,answer);assert.equal(repaired.compiled.rangeCheck.status,'passed');assert(repaired.compiled.repair);assert.equal(repaired.costs.realisation,.0001);
+assert.equal(repaired.answer,answer.replace("c'4","c''4"));assert.equal(repaired.rawAnswer,answer);assert.equal(repaired.compiled.rangeCheck.status,'passed');assert(repaired.compiled.repair);assert.equal(repaired.costs.realisation,.0001);
 assert.equal(requests[repairIndex].messages.length,2);assert(requests.some(r=>r.messages[0].content.startsWith('Repariere ausschließlich')));
 const rd=await (await call('/api/diagnosis?runId=aaaaccccdddd1111')).json();assert.equal(rd.costs.realisation,.0001);assert(rd.entries.some(e=>e.event==='korrektur'&&e.accepted===true));
-assert.equal((await value('/api/history/'+repaired.historyId)).entry.techout,repairAnswer);assert.equal((await value('/api/workspace')).workspace.costs.realisation,.0001);
+assert.equal((await value('/api/history/'+repaired.historyId)).entry.techout,answer.replace("c'4","c''4"));assert.equal((await value('/api/workspace')).workspace.costs.realisation,.0001);
 // A candidate changing the music is rejected and cannot overwrite the original.
-repairAnswer=answer.replace("c'4","d''4");const unsafe=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd2222'}});assert.equal(unsafe.answer,answer);assert(unsafe.compiled.warning.includes('Original erhalten'));assert.equal(unsafe.costs.realisation,.0001);
+repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"d''4"}]});const unsafe=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd2222'}});assert.equal(unsafe.answer,answer);assert(unsafe.compiled.repairFailed);assert(unsafe.compiled.warning.includes('Original erhalten'));assert.equal(unsafe.costs.realisation,.0001);
+repairFinish='length';repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});const truncated=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd5555'}});assert.equal(truncated.answer,answer);assert(truncated.compiled.repairFailed);repairFinish='stop';
+assert.equal(requests.find(r=>r.messages[0].content.startsWith('Repariere ausschließlich')).reasoning.effort,'low');assert(!('reasoning' in requests[0]));
 // An octave-only candidate which remains out of range is also rejected.
-repairMidi=null;repairAnswer=answer.replace("c'4","c''4");const stillBad=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd3333'}});assert.equal(stillBad.answer,answer);assert(stillBad.compiled.warning.includes('Original erhalten'));
+repairMidi=null;repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});const stillBad=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd3333'}});assert.equal(stillBad.answer,answer);assert(stillBad.compiled.warning.includes('Original erhalten'));
 // Register drift triggers repair even when the absolute playable range passes.
 const celloFixture=JSON.parse(await readFile(new URL('./fixtures/cello-register-events.json',import.meta.url),'utf8'));
-rendererMidi=celloFixture.original.midiBase64;repairMidi=celloFixture.corrected.midiBase64;repairAnswer=answer.replace("c'4","c''4");
+rendererMidi=celloFixture.original.midiBase64;repairMidi=celloFixture.corrected.midiBase64;repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});
 const registerFixed=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd4444'}});
 assert(registerFixed.compiled.repair);assert.equal(registerFixed.compiled.rangeCheck.status,'passed');assert.equal(registerFixed.compiled.registerCheck.status,'passed');assert.equal(registerFixed.costs.realisation,.0001);
+const manual=await value('/api/repair-octaves',{method:'POST',data:{code:answer,model:'test/model',runId:'aaaaccccdddd6666'}});assert(manual.compiled.repair);assert.equal(manual.code,answer.replace("c'4","c''4"));assert.equal(manual.cost,.0001);
 repairMidi=null;
 rendererMidi=null;repairAnswer=null;namingDown=false;
 rendererDown=true;const count=paid;assert.equal((await call('/api/run',{method:'POST',data:{...data,runId:'aaaabbbbccccdddd'}})).status,412);assert.equal(paid,count);assert.equal((await call('/api/diagnosis?runId=aaaabbbbccccdddd')).status,200);

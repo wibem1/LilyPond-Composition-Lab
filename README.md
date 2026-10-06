@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.11
+# LilyPond Composition Lab v0.1.12
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -51,3 +51,5 @@ V0.1.9: Der ursprüngliche freie Standardprompt ist wiederhergestellt. Der spät
 V0.1.10: Der Kompositionsaufruf enthält wieder exakt zwei Nachrichten (Systemtext und Auftrag), wie in v0.1.0. Die Titelsperrliste wird ausschließlich nach dem Komponieren verwendet. Bei erkannten Tonumfangfehlern folgt höchstens ein gesonderter technischer KI-Aufruf. Seine Antwort wird nur übernommen, wenn ausschließlich Oktavzeichen geändert wurden und die neu kompilierte MIDI-Datei sämtliche hinterlegten Tonumfänge einhält. Fehlgeschlagene Korrekturen erhalten das Original und die Warnung. Kosten und Prüfergebnisse stehen vollständig in der Diagnose. Neu kompilieren bleibt ohne KI-Aufruf. Musikalische Qualitätsverbesserung ist nicht garantiert.
 
 V0.1.11: Zusätzlich zum äußersten spielbaren Tonumfang prüft die App länger anhaltende hohe Cellolagen. App-Regel: mindestens vier aufeinanderfolgende Noten oberhalb G4 über mindestens acht Sekunden lösen eine Registerprüfung und beim Komponieren eine technische Oktavkorrektur aus. Das ist eine auf Nutzerwunsch gewählte Registerregel, kein allgemeines Verbot hoher Cellotöne. Einzelne Spitzentöne und ausdrücklich beauftragte hohe Lagen bleiben zulässig. Die Korrektur muss Quelltextvergleich, Tonumfang- und Registerprüfung bestehen; sonst bleiben Original und Warnung erhalten. Die freien Kompositionsvorgaben bleiben unverändert.
+
+V0.1.12: Reale Diagnose: Gemini verbrauchte 7677 von 7996 Ausgabetokens fürs Denken; die technische Volltextkorrektur wurde abgeschnitten. Die Reparatur liefert jetzt kurze JSON-Änderungen, die eindeutig und überlappungsfrei im Original angewendet werden. Nur diese technische Anfrage verwendet reasoning.effort=low und 8000 Tokens; der Kompositionsaufruf bleibt unverändert. Quelltext-, Tonumfang- und Registerprüfung gelten weiterhin. Gescheiterte Reparaturen werden ausdrücklich als fehlerhaft angezeigt. „Oktavfehler beheben“ prüft und repariert auch bereits vorhandene Stücke; Kosten und Originalquelle bleiben in der Diagnose.

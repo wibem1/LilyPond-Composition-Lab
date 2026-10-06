@@ -8,3 +8,8 @@ for(const [a,b] of [['c,8','d,8'],['c,8','c,4'],['c,8','r8'],['c,8','c,8\\p'],['
 assert(!octaveOnlyChange('\\header { title = "a\'" } c4','\\header { title = "a" } c\'4'));
 assert(!octaveOnlyChange('% c\'\nc4','% c\nc\'4'));
 console.log('PASS: accept octave marks only; reject changes to pitch classes, rhythm, rests, dynamics, key, title, notation mode, identifiers, comments and token boundaries.');
+const {applyOctaveEdits}=await import('../src/octave-repair.mjs');
+assert.equal(applyOctaveEdits(original,JSON.stringify({edits:[{from:'aes,8',to:'aes8'}]})),original.replace('aes,8','aes8'));
+for(const edits of [[{from:'c',to:"c'"}],[{from:'MISSING',to:'c'}],[{from:'aes,8',to:'bes8'}],[{from:'aes,8',to:'aes4'}],[{from:'aes,8 ees',to:'aes8 ees'},{from:'aes,8',to:'aes8'}]])assert.throws(()=>applyOctaveEdits(original,JSON.stringify({edits})));
+assert.throws(()=>applyOctaveEdits(original,'analysis then ```lilypond\npartial'));
+console.log('PASS: exact short JSON edits; ambiguous/missing/overlapping edits, music changes and truncated prose are rejected.');

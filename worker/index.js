@@ -1,8 +1,8 @@
-const VERSION="0.1.11";
+const VERSION="0.1.12";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
-import {octaveOnlyChange} from '../src/octave-repair.mjs';
+import {applyOctaveEdits} from '../src/octave-repair.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
@@ -196,19 +196,20 @@ async function compileLilyMidi(env,code,title,runId,task=''){
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
 async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,task=''){
- const messages=[{role:'system',content:'Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Ändere ausschließlich Apostrophe und Kommas an Tonhöhen, auch am Anker einer relative-Anweisung. Behalte relative-Anweisungen bei. Keine Neukomposition. Alle Notennamen, Vorzeichen, Dauern, Pausen, Stimmen, Instrumente, Dynamik, Tempo, Titel und sonstigen Anweisungen müssen unverändert bleiben. Beseitige kumulative Oktavdrift und halte jede Stimme in einer sinnvollen spielbaren Lage ihres Instruments. Bei einer Registerwarnung für Cello korrigiere unbeabsichtigte Sprünge in länger anhaltende hohe Lagen. Der normale Kernbereich der App reicht bis G4; einzelne hohe Spitzentöne bleiben erlaubt. Eine ausdrücklich beauftragte hohe Lage bleibt erhalten. Antworte nur mit dem vollständigen LilyPond-Code.'},{role:'user',content:compiled.warning+'\n\n'+code}];
+ const messages=[{role:'system',content:'Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Ändere ausschließlich Apostrophe und Kommas an Tonhöhen, auch am Anker einer relative-Anweisung. Behalte relative-Anweisungen bei. Keine Neukomposition. Alle Notennamen, Vorzeichen, Dauern, Pausen, Stimmen, Instrumente, Dynamik, Tempo, Titel und sonstigen Anweisungen müssen unverändert bleiben. Beseitige kumulative Oktavdrift und halte jede Stimme in einer sinnvollen spielbaren Lage ihres Instruments. Bei einer Registerwarnung für Cello korrigiere unbeabsichtigte Sprünge in länger anhaltende hohe Lagen. Der normale Kernbereich der App reicht bis G4; einzelne hohe Spitzentöne bleiben erlaubt. Eine ausdrücklich beauftragte hohe Lage bleibt erhalten. Antworte ausschließlich als JSON: {"edits":[{"from":"eindeutiger kurzer Originalausschnitt","to":"derselbe Ausschnitt mit korrigierten Oktavzeichen"}]}. Jeder from-Ausschnitt muss genau einmal im Original stehen. Nur tatsächlich notwendige Änderungen; kein vollständiges Dokument, keine Analyse, kein Markdown.'},{role:'user',content:compiled.warning+'\n\n'+code}];
+ const repairLimit=8000,reasoning={effort:'low'};
  let cost=0;
- await log(env,'anfrage',runId,{stage:'realisation',operation:'octave-repair',model,messages,max_tokens:maxTokens});
+ await log(env,'anfrage',runId,{stage:'realisation',operation:'octave-repair',model,messages,max_tokens:repairLimit,reasoning_requested:reasoning,output_format:'octave-edits'});
  try{
-  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens:maxTokens,stream:false,usage:{include:true}})});
+  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens:repairLimit,reasoning,stream:false,usage:{include:true}})});
   rejectRedirect(r);const d=await r.json();
   if(!r.ok)throw Error(d.error?.message||'Oktavkorrektur fehlgeschlagen.');
   cost=Number(d.usage?.cost)||0;
   let content=d.choices?.[0]?.message?.content;
   if(Array.isArray(content))content=content.filter(x=>x.type==='text').map(x=>x.text).join('\n');
-  const candidate=String(content||'').trim().replace(/^```(?:lilypond|ly)?\s*\n/i,'').replace(/\n```\s*$/,'').trim();
   await log(env,'antwort',runId,{stage:'realisation',operation:'octave-repair',model,answer:content,usage:d.usage||null,finish_reason:d.choices?.[0]?.finish_reason});
-  if(!octaveOnlyChange(code,candidate))throw Error('Korrektur verworfen: Es wurden nicht ausschließlich Oktavzeichen geändert.');
+  if(d.choices?.[0]?.finish_reason==='length')throw Error('Korrekturantwort wurde abgeschnitten.');
+  const candidate=applyOctaveEdits(code,content);
   const checked=await compileLilyMidi(env,candidate,title,runId,task);
   await log(env,'korrekturpruefung',runId,{operation:'octave-repair',source:candidate,...checked});
   if(checked.error||!checked.url||checked.rangeCheck?.status!=='passed'||checked.registerCheck?.status==='warning')throw Error('Korrektur verworfen: Kompilierung oder Tonumfangprüfung nicht bestanden.');
@@ -217,7 +218,7 @@ async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,t
   return {code:candidate,compiled:checked,cost};
  }catch(e){
   await log(env,'korrektur',runId,{operation:'octave-repair',accepted:false,error:String(e.message).replaceAll(key,'[API-Schlüssel]')});
-  return {code,compiled:{...compiled,warning:compiled.warning+'\nAutomatische Oktavkorrektur nicht erfolgreich; Original erhalten.'},cost};
+  return {code,compiled:{...compiled,repairFailed:true,warning:compiled.warning+'\nAutomatische Oktavkorrektur nicht erfolgreich; Original erhalten.'},cost};
  }
 }
 async function handle(req,env){
@@ -245,6 +246,16 @@ async function handle(req,env){
  if(req.method==='POST'&&p==='/api/compile-lilypond'){
   const b=await body(req),code=clean(b.code),runId=safe(b.runId||randomUUID());if(!code.trim())return json({error:'Kein LilyPond-Code vorhanden.'},400);
   const result=await compileLilyMidi(env,code,compositionFilename(b.title),runId,clean(b.task));await log(env,'kompilierung',runId,{source:code,title:compositionFilename(b.title),...result});return json(result,result.error?422:200);
+ }
+ if(req.method==='POST'&&p==='/api/repair-octaves'){
+  const b=await body(req),code=clean(b.code),task=clean(b.task),title=compositionFilename(b.title),runId=safe(b.runId||randomUUID());
+  const key=normalizeKey(b.key||await storedKey(env)),model=clean(b.model);await checkKey(key);
+  if(!code.trim()||!model.includes('/'))return json({error:'Code und Modell erforderlich.'},400);
+  let compiled=await compileLilyMidi(env,code,title,runId,task);await log(env,'kompilierung',runId,{source:code,...compiled});
+  if(compiled.rangeCheck?.instruments.some(x=>x.violations>0)||compiled.registerCheck?.status==='warning'){
+   const result=await repairOctaves(env,code,title,runId,key,model,8000,compiled,task);return json({...result,runId});
+  }
+  return json({code,compiled,cost:0,runId});
  }
  if(req.method==='POST'&&p==='/api/midi-import'){
   const b=await body(req),bytes=bytes64(String(b.base64||''));if(bytes.length<18||bytes.length>900000||String.fromCharCode(...bytes.subarray(0,4))!=='MThd')return json({error:'Bitte eine gültige Standard-MIDI-Datei (max. 900 KB) wählen.'},400);
