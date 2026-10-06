@@ -22,7 +22,7 @@ function renderResults(){
  $('playerTitle').textContent=state.midiUrl?$('title').value:'Noch keine aktuelle MIDI-Datei geladen.';
  $('costs').textContent='KI-Kosten dieses Laufs: $'+(Number(state.costs?.composition||0)+Number(state.costs?.realisation||0)).toFixed(6)+' · davon Oktavkorrektur $'+Number(state.costs?.realisation||0).toFixed(6);
 }
-function apply(e){if(e.system===TECHNICAL_SYSTEM)e={...e,system:SYSTEM};player.stop();ready=false;state={...state,...e,historyId:e.historyId||e.id||'',midiUrl:e.midiUrl||'',pages:e.pages||[],downloads:e.downloads||[]};for(const [id,key] of [['task','task'],['title','title'],['code','techout'],['system','system'],['tokens','tokens1']])if(e[key]!==undefined)$(id).value=e[key];modelChoice=e.compositionModel||modelChoice;selectModel(modelChoice);renderResults();}
+function apply(e){if(Number(e.tokens1)===8000)e={...e,tokens1:64000};if(e.system===TECHNICAL_SYSTEM)e={...e,system:SYSTEM};player.stop();ready=false;state={...state,...e,historyId:e.historyId||e.id||'',midiUrl:e.midiUrl||'',pages:e.pages||[],downloads:e.downloads||[]};for(const [id,key] of [['task','task'],['title','title'],['code','techout'],['system','system'],['tokens','tokens1']])if(e[key]!==undefined)$(id).value=e[key];modelChoice=e.compositionModel||modelChoice;selectModel(modelChoice);renderResults();}
 function selectModel(id){const m=catalog.find(x=>x.id===id);if(!m)return;$('provider').value=m.provider;populateModels(id);}
 function populateModels(preferred=''){const list=catalog.filter(x=>x.provider===$('provider').value);$('model').replaceChildren(...list.map(m=>new Option(m.name||m.id,m.id)));if(list.some(m=>m.id===preferred))$('model').value=preferred;modelChoice=$('model').value;prices();}
 function prices(){const m=catalog.find(x=>x.id===$('model').value);$('price').textContent=m?`Je 1 Mio. Tokens: Eingabe $${(m.prompt*1e6).toFixed(2)} · Ausgabe $${(m.completion*1e6).toFixed(2)}. Tatsächliche Kosten stehen in der Diagnose.`:'';}
@@ -38,8 +38,8 @@ $('compose').onclick=async()=>{
   const d=await api('/api/run',{runId:state.runId,key:$('key').value,model:$('model').value,task,system:$('system').value,maxTokens:Number($('tokens').value),title:$('title').value});
   $('code').value=d.answer;$('title').value=d.title;state.historyId=d.historyId;state.downloads=d.downloads;state.costs=d.costs||{composition:Number(d.usage?.cost)||0,realisation:0};
   await compiledResult(d.compiled);await persist();await refreshHistory();
-  message(d.compiled.repairFailed?'Oktavkorrektur fehlgeschlagen. Das Stück ist weiterhin fehlerhaft.':d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
-  if(d.finish_reason==='length')message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
+  message(d.compiled.incomplete?d.compiled.error:d.compiled.repairFailed?'Oktavkorrektur fehlgeschlagen. Das Stück ist weiterhin fehlerhaft.':d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
+  if(d.finish_reason==='length'&&!d.compiled.incomplete)message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
   if(d.compiled.repair)message($('status').textContent+'\n'+d.compiled.repair);
   if(d.titleWarning)message($('status').textContent+'\n'+d.titleWarning);
  if(d.compiled.warning)message($('status').textContent+'\n'+d.compiled.warning);
@@ -50,7 +50,7 @@ $('repair').onclick=async()=>{
  if(busy||!$('code').value.trim())return;setBusy(true);state.runId||=crypto.randomUUID().replaceAll('-','');message('Oktavlagen werden geprüft und bei Bedarf korrigiert …');
  try{const d=await api('/api/repair-octaves',{code:$('code').value,task:$('task').value,title:$('title').value,runId:state.runId,model:$('model').value,key:$('key').value});
   if(d.code!==$('code').value){$('code').value=d.code;state.downloads=[];}state.costs.realisation=(Number(state.costs.realisation)||0)+d.cost;
-  await compiledResult(d.compiled);await saveHistory();await persist();message(d.compiled.repairFailed?'Oktavkorrektur fehlgeschlagen. Das Stück ist weiterhin fehlerhaft.':d.compiled.repair||d.compiled.warning||'Oktavprüfung bestanden.');
+  await compiledResult(d.compiled);await saveHistory();await persist();message(d.compiled.incomplete?d.compiled.error:d.compiled.repairFailed?'Oktavkorrektur fehlgeschlagen. Das Stück ist weiterhin fehlerhaft.':d.compiled.repair||d.compiled.warning||'Oktavprüfung bestanden.');
  }catch(e){message('Oktavkorrektur fehlgeschlagen: '+e.message);}finally{setBusy(false);renderResults();}
 };
 $('compile').onclick=async()=>{if(busy)return;const code=$('code').value;if(!code.trim())return message('Bitte LilyPond-Code eingeben oder öffnen.');setBusy(true);state.runId||=crypto.randomUUID().replaceAll('-','');message('LilyPond wird kompiliert …');try{const d=await api('/api/compile-lilypond',{code,title:$('title').value,task:$('task').value,runId:state.runId});await compiledResult(d);await saveHistory();message('Kompiliert · '+d.pages.length+' Seite(n).'+(d.warning?'\n'+d.warning:d.rangeCheck?.status==='passed'?'\nTonumfangprüfung bestanden.':''))}catch(e){state.compiler=[e.message,e.details?.logs].filter(Boolean).join('\n');invalidate();$('compiler').textContent=state.compiler;message('Compilerfehler: '+e.message);await saveHistory().catch(x=>{$('memoryStatus').textContent=x.message})}finally{setBusy(false);renderResults()}};

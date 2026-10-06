@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.13
+# LilyPond Composition Lab v0.1.14
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -57,3 +57,5 @@ V0.1.12: Reale Diagnose: Gemini verbrauchte 7677 von 7996 Ausgabetokens fürs De
 V0.1.13: Diagnose c43b07ef: ungültige JSON-Escapes und weiterhin kumulative Oktavdrift. Technische Reparatur verwendet nummerierte Tonpositionen und ganzzahlige neue Oktavzeichen statt mehrfach escapeter Quelltextausschnitte. Relative Tonhöhenregeln sind ausdrücklich erklärt; technische Denkstufe medium mit 24000 Gesamttokens (8000 wurden im echten Test vom Denken aufgebraucht), Komposition unverändert. Quelltext-, echte MIDI-Tonumfang- und Registerprüfung bleiben verbindlich vor Übernahme. Legacy-Textänderungen bleiben für gespeicherte Regressionen lesbar.
 
 Echter v0.1.13-Test mit Gemini 3.8 Flash auf Diagnose c43b07ef: erste vollständige Korrektur mit 24000 Tokens akzeptiert, Kosten 0,0920715 USD, 140 MIDI-Noten E1–C6, Dauer 31,304304 s bei 92 BPM / 16 Takten 3/4. Nur Oktavzeichen geändert; Notennamen, Rhythmus und übriger Quelltext geschützt. 22968 Denktokens zeigen, dass diese technische Korrektur mehrere Minuten dauern kann. Ergebnis im bestehenden Verlauf und Arbeitsstand gespeichert. Reale Modellantwort als Regressionstest gespeichert.
+
+V0.1.14: Standard-Kompositionsbudget 64000 statt 8000 Tokens; alte 8000-Einstellungen werden auf 64000 angehoben, andere explizite Werte erhalten. Kein reasoning-Parameter in der Komposition. Bei finish_reason=length bleibt die Originalantwort samt Kosten im Verlauf/Arbeitsstand und als unvollständiger Download erhalten; keine Titelvergabe, Kompilierung oder Oktavreparatur des Fragments. Eindeutige Statusmeldung statt irreführendem fehlenden score-Block.

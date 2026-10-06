@@ -1,4 +1,4 @@
-const VERSION="0.1.13";
+const VERSION="0.1.14";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
@@ -128,7 +128,7 @@ async function saveFile(env,title,ext,bytes){
 }
 async function saveHistory(env,b){
  const id=historyId(b.id)||randomUUID().replaceAll('-',''),old=await getJson(env,'history/'+id+'.json')||{};
- const entry={id,createdAt:old.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:{composition:Number(b.costs?.composition)||0,realisation:Number(b.costs?.realisation)||0},tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||4500)),system:clean(b.system),compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
+ const entry={id,createdAt:old.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:{composition:Number(b.costs?.composition)||0,realisation:Number(b.costs?.realisation)||0},tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
  await env.BUCKET.put('history/'+id+'.json',JSON.stringify(entry),{httpMetadata:{contentType:'application/json'},customMetadata:{summary:JSON.stringify(historyPublic(entry))}});return historyPublic(entry);
 }
 function validDownloads(d){return Array.isArray(d)?d.filter(x=>typeof x?.url==='string'&&x.url.startsWith('/download/')&&typeof x.label==='string').slice(0,8).map(x=>({label:x.label.slice(0,100),url:x.url.slice(0,500)})):[]}
@@ -282,7 +282,7 @@ async function handle(req,env){
  if(req.method==='GET'&&p==='/api/workspace')return json({workspace:await getJson(env,'workspace/current.json')});
  if(req.method==='POST'&&p==='/api/workspace'){
   const b=await body(req),w=b.workspace;if(!w||typeof w!=='object'||Array.isArray(w))return json({error:'Ungültiger Arbeitsstand'},400);
-  const entry={title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compiler:clean(w.compiler),pages:validDownloads(w.pages),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||4500),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:{composition:Number(w.costs?.composition)||0,realisation:Number(w.costs?.realisation)||0},downloads:validDownloads(w.downloads),midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};await putJson(env,'workspace/current.json',entry);return json({saved:true});
+  const entry={title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compiler:clean(w.compiler),pages:validDownloads(w.pages),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||64000),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:{composition:Number(w.costs?.composition)||0,realisation:Number(w.costs?.realisation)||0},downloads:validDownloads(w.downloads),midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};await putJson(env,'workspace/current.json',entry);return json({saved:true});
  }
  if(req.method==='GET'&&p==='/api/diagnosis'){
   const runId=safe(url.searchParams.get('runId')||''),objects=await listAll(env,'logs/'+runId+'/');const entries=await Promise.all(objects.map(o=>getJson(env,o.key)));entries.sort((a,b)=>a.date.localeCompare(b.date));if(!entries.length)return json({error:'Kein Protokoll gefunden.'},404);
@@ -305,7 +305,8 @@ async function run(req,env){
   const system=!suppliedSystem||suppliedSystem===TECHNICAL_SYSTEM?DEFAULT_SYSTEM:suppliedSystem;
   const previousTitles=[...new Set((await listAll(env,'history/')).map(o=>{try{return JSON.parse(o.customMetadata?.summary||'{}').title||''}catch{return ''}}).filter(Boolean))];
   const titleContext=[...new Set([...previousTitles,clean(b.title)].filter(t=>t&&!/^Unbenannte[ _]Komposition$/i.test(t)))];
-  const max_tokens=Math.min(64000,Math.max(500,parseInt(b.maxTokens)||8000));
+  const requestedTokens=parseInt(b.maxTokens);
+  const max_tokens=Math.min(64000,Math.max(500,!requestedTokens||requestedTokens===8000?64000:requestedTokens));
   const messages=[{role:'system',content:system},{role:'user',content:task}];
   const payload={model,messages,max_tokens,stream:false,usage:{include:true}};
   await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:'provider_default'});
@@ -327,6 +328,14 @@ async function run(req,env){
   const base={title:compositionFilename(title),task,system,techout:code,compositionModel:model,format:'lilypond',runId,downloads,costs:{composition:Number(usage?.cost)||0,realisation:0},tokens1:max_tokens};
   // Persist the original composition before naming or compiling it.
   const saved=await saveHistory(env,base);
+  if(finish==='length'){
+   const compiled={error:'KI-Antwort wegen des Tokenlimits abgeschnitten. Der Notentext ist unvollständig. Bitte das Tokenbudget erhöhen und erneut komponieren.',incomplete:true};
+   if(code)downloads.push({label:'Unvollständige LilyPond-Datei',url:await saveFile(env,title,'ly',code)});
+   const entry={...base,id:saved.id,compiler:compiled.error,pages:[],midiUrl:''};
+   await saveHistory(env,entry);await putJson(env,'workspace/current.json',{...entry,historyId:saved.id});
+   await log(env,'ausgabelimit',runId,{max_tokens,warning:compiled.error});
+   return json({runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,costs:base.costs,finish_reason:finish,compiled,durationMs:Date.now()-started});
+  }
   if(usedKeys.has(titleKey(title))){
    const blocked=titleContext.slice(-40);
    for(let attempt=1;attempt<=2;attempt++){
