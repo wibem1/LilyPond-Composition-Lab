@@ -13,3 +13,11 @@ assert.equal(applyOctaveEdits(original,JSON.stringify({edits:[{from:'aes,8',to:'
 for(const edits of [[{from:'c',to:"c'"}],[{from:'MISSING',to:'c'}],[{from:'aes,8',to:'bes8'}],[{from:'aes,8',to:'aes4'}],[{from:'aes,8 ees',to:'aes8 ees'},{from:'aes,8',to:'aes8'}]])assert.throws(()=>applyOctaveEdits(original,JSON.stringify({edits})));
 assert.throws(()=>applyOctaveEdits(original,'analysis then ```lilypond\npartial'));
 console.log('PASS: exact short JSON edits; ambiguous/missing/overlapping edits, music changes and truncated prose are rejected.');
+
+assert(octaveOnlyChange('es,2 as,4 es','es2 as4 es'));
+assert.equal(applyOctaveEdits('es,2 as,4 es',JSON.stringify({edits:[{from:'es,2',to:'es2'},{from:'as,4',to:'as4'}]})),'es2 as4 es');
+const {readFile}=await import('node:fs/promises');
+const actual=JSON.parse(await readFile(new URL('./fixtures/gemini-repair-edits.json',import.meta.url),'utf8'));
+let repaired=actual.source;for(const response of actual.responses)repaired=applyOctaveEdits(repaired,response);
+assert(octaveOnlyChange(actual.source,repaired));assert(repaired.includes('  es2 c |'));assert(!repaired.includes("  c'4.(\\mf"));
+console.log('PASS: both real Gemini correction responses, including es octave edits formerly rejected.');
