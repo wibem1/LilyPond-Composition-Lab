@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {pathToFileURL} from 'node:url';
+import worker from '../worker/index.js';
+import {SoundBankLoader,SpessaSynthProcessor,SPESSA_BUFSIZE} from 'spessasynth_core';
+const get=path=>worker.fetch(new Request('https://test.local'+path),{},{});
+const font=await (await get('/TimGM6mb.sf2')).arrayBuffer();
+const synth=new SpessaSynthProcessor(48000,{effectsEnabled:false});await synth.processorInitialized;
+const energy=()=>{synth.noteOn(0,60,90);let sum=0;for(let i=0;i<200;i++){const l=new Float32Array(SPESSA_BUFSIZE),r=new Float32Array(SPESSA_BUFSIZE);synth.process(l,r);for(const v of [...l,...r]){assert(Number.isFinite(v));sum+=v*v;}}synth.stopAllChannels(true);assert(sum>.001);return sum;};
+synth.soundBankManager.addSoundBank(SoundBankLoader.fromArrayBuffer(font.slice(0)),'default');const a=energy();
+synth.soundBankManager.addSoundBank(SoundBankLoader.fromArrayBuffer(font.slice(0)),'custom');synth.soundBankManager.priorityOrder=['custom','default'];const b=energy();synth.soundBankManager.deleteSoundBank('custom');const c=energy();
+console.log('PASS: real stereo PCM is finite and audible before/after font changes:',[a,b,c].map(x=>x.toFixed(2)).join(', '));
+let code=await readFile('src/player-adapter.mjs','utf8');code=code.replace("from '/spessasynth.mjs'",`from '${pathToFileURL(process.cwd()+'/node_modules/spessasynth_lib/dist/index.js')}'`);code=code.replace('WorkletSynthesizer,Sequencer,SoundBankLoader','WorkletSynthesizer,Sequencer');code+='\n'+await readFile('src/midi-reader.mjs','utf8');
+const {SoundFontPlayer}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
+class Events{events=new Map();addEvent(t,id,f){this.events.set(t+id,{t,f});}removeEvent(t,id){this.events.delete(t+id);}emit(t,d={}){for(const e of [...this.events.values()])if(e.t===t)e.f(d);}}
+let fail=false,engines=0;
+const createEngine=async()=>{engines++;const ids=[];return {ctx:{state:'running',currentTime:0,close:async()=>{},resume:async()=>{}},master:{gain:{setTargetAtTime(){}}},synth:{eventHandler:new Events(),stopAll(){},destroy(){},getSnapshot:async()=>{},soundBankManager:{get priorityOrder(){return ids},set priorityOrder(v){ids.splice(0,ids.length,...v)},async addSoundBank(b,id){if(fail){fail=false;throw Error('decode failed')}ids.push(id)},async deleteSoundBank(id){ids.splice(ids.indexOf(id),1)}}},seq:{eventHandler:new Events(),currentTime:0,isFinished:false,pause(){this.playing=false},play(){this.playing=true},loadNewSongList(){queueMicrotask(()=>this.eventHandler.emit('songChange'))}}};};
+const originalFetch=globalThis.fetch;globalThis.fetch=async()=>new Response(font.slice(0));
+const player=new SoundFontPlayer({createEngine,validate:b=>{if(b.byteLength<4)throw Error('bad file');return 1}});
+// Own simple MIDI fixture, one note lasting one second.
+const midi=Uint8Array.from([77,84,104,100,0,0,0,6,0,0,0,1,0,96,77,84,114,107,0,0,0,13,0,144,60,90,129,64,128,60,0,0,255,47,0]).buffer;
+player.loadMidi(midi);await player.loadSoundFontBuffer(font.slice(0),'A');await player.play();assert(!player.paused);player.pause();assert(player.paused);
+await Promise.all([player.loadSoundFontBuffer(font.slice(0),'B'),player.loadSoundFontBuffer(font.slice(0),'C')]);assert.equal(player.soundFontName,'C');assert(player.paused);
+await assert.rejects(player.loadSoundFontBuffer(new ArrayBuffer(1),'bad'),/bisherige Klang/);assert.equal(player.soundFontName,'C');await player.play();assert(!player.paused);
+player.seek(.4);assert(!player.paused);player.stop();assert.equal(player.current,0);player.seek(.2);assert(player.paused);
+fail=true;await assert.rejects(player.loadSoundFontBuffer(font.slice(0),'broken'),/wiederhergestellt/);assert.equal(engines,2);assert.equal(player.soundFontName,'TimGM6mb (Standard)');await player.play();assert(!player.paused);player.stop();
+const html=await (await get('/style.css')).text();assert(html.includes('font-size:16px'));assert(html.includes('minmax(0,1fr)'));assert((await (await get('/app.mjs')).text()).includes("window.addEventListener('pageshow',resetEntryViewport)"));assert(!html.includes('user-scalable=no'));
+for(const asset of ['/spessasynth.mjs','/spessasynth-processor.js','/LICENSE-SYNTH.txt'])assert.equal((await get(asset)).status,200);
+globalThis.fetch=originalFetch;
+console.log('PASS: serialized font changes, corrupt font preserves playback, decoder failure recovers, transport pause/stop/seek, self-hosted audio assets and zoomable entry viewport.');

@@ -1,0 +1,5 @@
+node_modules/
+dist/
+worker/generated.js
+.sites-runtime/
+.env

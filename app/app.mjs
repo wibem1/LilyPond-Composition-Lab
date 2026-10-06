@@ -1,0 +1,74 @@
+import {SoundFontPlayer} from '/soundfont-player.mjs';
+const $=id=>document.getElementById(id);
+const SYSTEM='Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf.';
+$('system').value=SYSTEM;
+const player=new SoundFontPlayer();let catalog=[],busy=false,ready=false,loading=false,timer,saveChain=Promise.resolve(),restoring=true,modelChoice='';
+let state={historyId:'',runId:'',costs:{composition:0,realisation:0},downloads:[],midiUrl:'',pages:[],compiler:''};
+async function api(path,data,method){const r=await fetch(path,{method:method||(data?'POST':'GET'),headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});const d=await r.json();if(!r.ok){const e=Error(d.error||'HTTP '+r.status);e.details=d;throw e;}return d;}
+function payload(){return {...state,id:state.historyId,title:$('title').value,task:$('task').value,system:$('system').value,techout:$('code').value,draft:'',format:'lilypond',tokens1:$('tokens').value,compositionModel:$('model').value||modelChoice,realisationModel:'',compiler:$('compiler').textContent};}
+function queueSave(){if(restoring)return;clearTimeout(timer);timer=setTimeout(()=>persist(),550);}
+function persist(){if(restoring)return Promise.resolve();const workspace=payload();saveChain=saveChain.catch(()=>{}).then(()=>api('/api/workspace',{workspace})).then(()=>{$('memoryStatus').textContent='Letzter Arbeitsstand gespeichert.'}).catch(e=>{$('memoryStatus').textContent='Arbeitsstand konnte nicht gespeichert werden: '+e.message;throw e});return saveChain;}
+function setBusy(v){busy=v;for(const id of ['compose','compile','new','import','openHistory','deleteHistory','saveHistory'])$(id).disabled=v;}
+function message(s){$('status').textContent=s;}
+function invalidate(){player.stop();ready=false;state.midiUrl='';state.pages=[];state.downloads=[];renderResults();$('scoreStatus').textContent='Code geändert. Bitte neu kompilieren.';queueSave();}
+function renderResults(){
+ $('score').replaceChildren();for(const p of state.pages||[]){const img=document.createElement('img');img.src=p.url;img.alt=p.label;img.loading='lazy';$('score').append(img)}
+ $('scoreStatus').textContent=state.pages?.length?state.pages.length+' Notenseite(n).':'Noch kein aktuelles Notenbild.';
+ $('downloads').replaceChildren();for(const d of state.downloads||[]){const a=document.createElement('a');a.href=d.url;a.textContent=d.label+' speichern';$('downloads').append(a)}
+ for(const id of ['play','pause','stop','saveMidi','position'])$(id).disabled=!state.midiUrl;
+ $('diagnosis').disabled=!state.runId;$('compiler').textContent=state.compiler||'Noch nicht kompiliert.';
+ $('playerTitle').textContent=state.midiUrl?$('title').value:'Noch keine aktuelle MIDI-Datei geladen.';
+ $('costs').textContent='KI-Kosten dieses Laufs: $'+Number(state.costs?.composition||0).toFixed(6)+' · Compiler ohne zusätzlichen KI-Aufruf.';
+}
+function apply(e){player.stop();ready=false;state={...state,...e,historyId:e.historyId||e.id||'',midiUrl:e.midiUrl||'',pages:e.pages||[],downloads:e.downloads||[]};for(const [id,key] of [['task','task'],['title','title'],['code','techout'],['system','system'],['tokens','tokens1']])if(e[key]!==undefined)$(id).value=e[key];modelChoice=e.compositionModel||modelChoice;selectModel(modelChoice);renderResults();}
+function selectModel(id){const m=catalog.find(x=>x.id===id);if(!m)return;$('provider').value=m.provider;populateModels(id);}
+function populateModels(preferred=''){const list=catalog.filter(x=>x.provider===$('provider').value);$('model').replaceChildren(...list.map(m=>new Option(m.name||m.id,m.id)));if(list.some(m=>m.id===preferred))$('model').value=preferred;modelChoice=$('model').value;prices();}
+function prices(){const m=catalog.find(x=>x.id===$('model').value);$('price').textContent=m?`Je 1 Mio. Tokens: Eingabe $${(m.prompt*1e6).toFixed(2)} · Ausgabe $${(m.completion*1e6).toFixed(2)}. Tatsächliche Kosten stehen in der Diagnose.`:'';}
+async function models(){try{const d=await api('/api/models');catalog=d.models;const providers=[...new Set(catalog.map(m=>m.provider))].sort();$('provider').replaceChildren(...providers.map(x=>new Option(x,x)));selectModel(modelChoice||catalog.find(x=>x.id.startsWith('anthropic/claude-sonnet-'))?.id||catalog[0]?.id);if(!$('model').value)populateModels();$('catalogStatus').textContent=catalog.length+' Textmodelle verfügbar.'}catch(e){$('catalogStatus').textContent='Modellkatalog: '+e.message;}}
+async function refreshHistory(){const d=await api('/api/history');$('history').replaceChildren(...d.entries.map(e=>new Option(e.title+' · '+new Date(e.updatedAt).toLocaleString('de-DE'),e.id)));if(state.historyId)$('history').value=state.historyId;}
+async function saveHistory(){if(!$('code').value.trim())return;const d=await api('/api/history',payload());state.historyId=d.entry.id;await refreshHistory();await persist();}
+async function compiledResult(d){ready=false;player.stop();state.midiUrl=d.url||'';state.pages=d.pages||[];state.compiler=[d.error,d.warning,d.logs].filter(Boolean).join('\n')||'Kompilierung erfolgreich.';state.downloads=state.downloads.filter(x=>x.url.endsWith('.ly'));if(d.url)state.downloads.push({label:'MIDI-Datei',url:d.url});renderResults();}
+$('compose').onclick=async()=>{
+ if(busy)return;if(!$('model').value)return message('Bitte zuerst ein Modell auswählen.');
+ const task=$('task').value;if(!task.trim())return message('Bitte einen Auftrag eingeben.');
+ setBusy(true);state.runId=crypto.randomUUID().replaceAll('-','');state.historyId='';state.costs={composition:0,realisation:0};renderResults();message('Compiler wird vor dem KI-Aufruf geprüft …');
+ try{
+  const d=await api('/api/run',{runId:state.runId,key:$('key').value,model:$('model').value,task,system:$('system').value,maxTokens:Number($('tokens').value),title:$('title').value});
+  $('code').value=d.answer;$('title').value=d.title;state.historyId=d.historyId;state.downloads=d.downloads;state.costs={composition:Number(d.usage?.cost)||0,realisation:0};
+  await compiledResult(d.compiled);await persist();await refreshHistory();
+  message(d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
+  if(d.finish_reason==='length')message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
+ }catch(e){message('Fehler: '+e.message);queueSave()}finally{setBusy(false);renderResults()}
+};
+$('compile').onclick=async()=>{if(busy)return;const code=$('code').value;if(!code.trim())return message('Bitte LilyPond-Code eingeben oder öffnen.');setBusy(true);state.runId||=crypto.randomUUID().replaceAll('-','');message('LilyPond wird kompiliert …');try{const d=await api('/api/compile-lilypond',{code,title:$('title').value,runId:state.runId});await compiledResult(d);await saveHistory();message('Kompiliert · '+d.pages.length+' Seite(n).')}catch(e){state.compiler=[e.message,e.details?.logs].filter(Boolean).join('\n');invalidate();$('compiler').textContent=state.compiler;message('Compilerfehler: '+e.message);await saveHistory().catch(x=>{$('memoryStatus').textContent=x.message})}finally{setBusy(false);renderResults()}};
+$('saveLy').onclick=()=>{const url=URL.createObjectURL(new Blob([$('code').value],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=($('title').value.replace(/[\\/:*?"<>|]/g,'_')||'Komposition')+'.ly';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};
+$('import').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>200000)return message('Datei zu groß (max. 200 KB).');state.historyId='';state.runId='';$('code').value=await f.text();$('title').value=$('code').value.match(/\btitle\s*=\s*"([^"\n]+)"/)?.[1]||f.name.replace(/\.ly$/i,'');invalidate();await saveHistory().catch(x=>message(x.message));e.target.value='';};
+$('new').onclick=()=>{player.stop();ready=false;state={historyId:'',runId:'',costs:{composition:0,realisation:0},downloads:[],midiUrl:'',pages:[],compiler:''};$('code').value='';$('title').value='Unbenannte Komposition';renderResults();queueSave();message('Neue Komposition bereit.');};
+$('saveHistory').onclick=()=>saveHistory().catch(e=>{$('memoryStatus').textContent=e.message});
+$('openHistory').onclick=async()=>{try{if(!$('history').value)return;apply((await api('/api/history/'+$('history').value)).entry);await persist()}catch(e){$('memoryStatus').textContent=e.message}};
+$('deleteHistory').onclick=async()=>{const id=$('history').value;if(!id)return;if(!confirm('Die ausgewählte Komposition aus dem Verlauf löschen?'))return;try{await api('/api/history/'+id,null,'DELETE');if(state.historyId===id)state.historyId='';await refreshHistory();await persist()}catch(e){$('memoryStatus').textContent=e.message}};
+$('diagnosis').onclick=async()=>{if(state.runId)location.href='/api/diagnosis?runId='+encodeURIComponent(state.runId);};
+async function keyStatus(){const d=await api('/api/key-status');$('keyStatus').textContent=d.stored?'Schlüssel für diese App verschlüsselt gespeichert.':'Noch kein Schlüssel gespeichert.';$('saveKey').disabled=!d.canStore;}
+$('saveKey').onclick=async()=>{try{await api('/api/key-store',{key:$('key').value});$('key').value='';await keyStatus()}catch(e){$('keyStatus').textContent=e.message}};
+$('deleteKey').onclick=async()=>{try{await api('/api/key-store',null,'DELETE');$('key').value='';await keyStatus()}catch(e){$('keyStatus').textContent=e.message}};
+$('reloadModels').onclick=models;$('provider').onchange=()=>{populateModels();queueSave()};$('model').onchange=()=>{modelChoice=$('model').value;prices();queueSave()};
+for(const id of ['task','title','system','tokens'])$(id).oninput=queueSave;$('code').oninput=invalidate;
+const fmt=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
+player.onprogress=(t,d)=>{$('position').max=d||1;$('position').value=t;$('time').textContent=fmt(t)+' / '+fmt(d)};
+$('play').onclick=async()=>{if(loading)return;loading=true;try{await player.init();if(!player.sf)await player.loadSoundFont('/TimGM6mb.sf2','TimGM6mb');if(!ready){const r=await fetch(state.midiUrl);if(!r.ok)throw Error('MIDI konnte nicht geladen werden.');player.loadMidi(await r.arrayBuffer());ready=true}await player.play();$('playerStatus').textContent='Wiedergabe · '+player.soundFontName}catch(e){$('playerStatus').textContent='Player: '+e.message}finally{loading=false}};
+$('pause').onclick=()=>player.pause();$('stop').onclick=()=>player.stop();$('position').oninput=()=>player.seek(Number($('position').value));$('volume').oninput=()=>player.setMasterVolume($('volume').value);$('saveMidi').onclick=()=>{if(state.midiUrl)location.href=state.midiUrl};
+$('font').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{await player.init();await player.loadSoundFontBuffer(await f.arrayBuffer(),f.name);$('playerStatus').textContent='Klang: '+f.name}catch(e){$('playerStatus').textContent=e.message}e.target.value='';};
+$('defaultFont').onclick=async()=>{try{await player.init();await player.loadSoundFont('/TimGM6mb.sf2','TimGM6mb');$('playerStatus').textContent='Klang: TimGM6mb'}catch(e){$('playerStatus').textContent=e.message}};
+let installPrompt;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e});$('installApp').onclick=async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null}else{$('installHelp').hidden=false;$('installHelp').textContent='Android: Browser-Menü → App installieren. iPad: Safari → Teilen → Zum Home-Bildschirm. Danach über das Icon starten.'}};
+if(matchMedia('(display-mode: standalone)').matches||navigator.standalone)$('installApp').hidden=true;
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).catch(()=>{});
+window.addEventListener('pagehide',()=>{if(!restoring)navigator.sendBeacon('/api/workspace',new Blob([JSON.stringify({workspace:payload()})],{type:'application/json'}))});
+async function boot(){renderResults();try{const d=await api('/api/workspace');if(d.workspace)apply(d.workspace)}catch(e){$('memoryStatus').textContent='Letzter Arbeitsstand: '+e.message}restoring=false;await Promise.allSettled([models(),refreshHistory(),keyStatus()]);}
+boot();
+
+const context=document.modelContext;
+if(context?.registerTool){const lifecycle=new AbortController();
+ for(const tool of [{name:'read_composition_workspace',description:'Read the visible LilyPond source, task and compiler status.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},execute:()=>({title:$('title').value,task:$('task').value,code:$('code').value,compiler:state.compiler,busy})},{name:'stage_lilypond_code',description:'Set editable LilyPond source in the visible workspace and save the last state. Does not compile or call a paid AI.',inputSchema:{type:'object',properties:{code:{type:'string',maxLength:200000}},required:['code'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true},async execute(input){if(busy||!input||typeof input.code!=='string'||input.code.length>200000)throw Error('Invalid code or busy workspace');$('code').value=input.code;invalidate();await persist();return {staged:true,length:input.code.length}}}])try{Promise.resolve(context.registerTool(tool,{signal:lifecycle.signal})).catch(()=>{})}catch{}
+ window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});}
+
+function resetEntryViewport(){const v=document.querySelector('meta[name="viewport"]');const normal='width=device-width,initial-scale=1,viewport-fit=cover';v.content=normal+',minimum-scale=1,maximum-scale=1';requestAnimationFrame(()=>requestAnimationFrame(()=>{v.content=normal}));}window.addEventListener('pageshow',resetEntryViewport);

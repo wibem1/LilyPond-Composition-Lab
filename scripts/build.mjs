@@ -1,0 +1,10 @@
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {build} from 'esbuild';
+const assets=JSON.parse(await readFile('worker/assets.json','utf8'));
+for(const [url,file,type] of [['/app.mjs','app/app.mjs','text/javascript'],['/style.css','app/style.css','text/css']])assets[url]={text:await readFile(file,'utf8'),type:type+'; charset=utf-8'};
+const PAGE=await readFile('app/index.html','utf8');
+await writeFile('worker/generated.js','export const PAGE='+JSON.stringify(PAGE)+';\nexport const ASSETS='+JSON.stringify(assets)+';\n');
+await mkdir('dist/server',{recursive:true});await mkdir('dist/.openai',{recursive:true});
+await build({entryPoints:['worker/index.js'],outfile:'dist/server/index.js',bundle:true,format:'esm',platform:'neutral',target:'es2022'});
+await writeFile('dist/.openai/hosting.json',await readFile('.openai/hosting.json'));
+console.log('Built LilyPond Composition Lab.');
