@@ -1,6 +1,7 @@
-const VERSION="0.1.7";
+const VERSION="0.1.8";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
+import {initialInstrumentNames} from '../src/notation-layout.mjs';
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
 const tag=(v,p)=>String.fromCharCode(...new Uint8Array(v.buffer,v.byteOffset+p,4));
@@ -172,7 +173,7 @@ async function compileLilyMidi(env,code,title,runId,ensemble=[]){
  if(code.length>200000)return {error:'LilyPond-Quelle ist zu groß.'};
  try{
   const prepared=ensureMidiDirective(code);
-  const result=await rpc('render',{backend:'svg',src:prepared.code,version:'stable'});
+  const result=await rpc('render',{backend:'svg',src:initialInstrumentNames(prepared.code),version:'stable'});
   const logs=String(result.logs||'');
   if(result.err)return {error:'LilyPond-Kompilierung fehlgeschlagen: '+String(result.err),logs,durationMs:Date.now()-started};
   const pages=[];
@@ -188,7 +189,7 @@ async function compileLilyMidi(env,code,title,runId,ensemble=[]){
    }
   }
   else warning='LilyPond erzeugte keine MIDI-Datei.';
-  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,addedMidiBlock:prepared.added,durationMs:Date.now()-started};
+  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
 async function handle(req,env){
