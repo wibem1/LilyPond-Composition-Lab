@@ -196,30 +196,34 @@ async function compileLilyMidi(env,code,title,runId,task=''){
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
 async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,task=''){
- const messages=[{role:'system',content:'Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Ändere ausschließlich Apostrophe und Kommas an Tonhöhen, auch am Anker einer relative-Anweisung. Behalte relative-Anweisungen bei. Keine Neukomposition. Alle Notennamen, Vorzeichen, Dauern, Pausen, Stimmen, Instrumente, Dynamik, Tempo, Titel und sonstigen Anweisungen müssen unverändert bleiben. Beseitige kumulative Oktavdrift und halte jede Stimme in einer sinnvollen spielbaren Lage ihres Instruments. Bei einer Registerwarnung für Cello korrigiere unbeabsichtigte Sprünge in länger anhaltende hohe Lagen. Der normale Kernbereich der App reicht bis G4; einzelne hohe Spitzentöne bleiben erlaubt. Eine ausdrücklich beauftragte hohe Lage bleibt erhalten. Antworte ausschließlich als JSON: {"edits":[{"from":"eindeutiger kurzer Originalausschnitt","to":"derselbe Ausschnitt mit korrigierten Oktavzeichen"}]}. Jeder from-Ausschnitt muss genau einmal im Original stehen. Nur tatsächlich notwendige Änderungen; kein vollständiges Dokument, keine Analyse, kein Markdown.'},{role:'user',content:compiled.warning+'\n\n'+code}];
- const repairLimit=8000,reasoning={effort:'low'};
- let cost=0;
- await log(env,'anfrage',runId,{stage:'realisation',operation:'octave-repair',model,messages,max_tokens:repairLimit,reasoning_requested:reasoning,output_format:'octave-edits'});
- try{
-  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens:repairLimit,reasoning,stream:false,usage:{include:true}})});
-  rejectRedirect(r);const d=await r.json();
-  if(!r.ok)throw Error(d.error?.message||'Oktavkorrektur fehlgeschlagen.');
-  cost=Number(d.usage?.cost)||0;
-  let content=d.choices?.[0]?.message?.content;
-  if(Array.isArray(content))content=content.filter(x=>x.type==='text').map(x=>x.text).join('\n');
-  await log(env,'antwort',runId,{stage:'realisation',operation:'octave-repair',model,answer:content,usage:d.usage||null,finish_reason:d.choices?.[0]?.finish_reason});
-  if(d.choices?.[0]?.finish_reason==='length')throw Error('Korrekturantwort wurde abgeschnitten.');
-  const candidate=applyOctaveEdits(code,content);
-  const checked=await compileLilyMidi(env,candidate,title,runId,task);
-  await log(env,'korrekturpruefung',runId,{operation:'octave-repair',source:candidate,...checked});
-  if(checked.error||!checked.url||checked.rangeCheck?.status!=='passed'||checked.registerCheck?.status==='warning')throw Error('Korrektur verworfen: Kompilierung oder Tonumfangprüfung nicht bestanden.');
-  checked.repair='Oktavfehler korrigiert; ausschließlich Oktavzeichen geändert und Tonumfang und Celloregister erneut geprüft.';
-  await log(env,'korrektur',runId,{operation:'octave-repair',accepted:true});
-  return {code:candidate,compiled:checked,cost};
- }catch(e){
-  await log(env,'korrektur',runId,{operation:'octave-repair',accepted:false,error:String(e.message).replaceAll(key,'[API-Schlüssel]')});
-  return {code,compiled:{...compiled,repairFailed:true,warning:compiled.warning+'\nAutomatische Oktavkorrektur nicht erfolgreich; Original erhalten.'},cost};
+ const instructions='Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Ändere ausschließlich Apostrophe und Kommas an Tonhöhen, auch am Anker einer relative-Anweisung. Behalte relative-Anweisungen bei. Keine Neukomposition. Alle Notennamen, Vorzeichen, Dauern, Pausen, Stimmen, Instrumente, Dynamik, Tempo, Titel und sonstigen Anweisungen müssen unverändert bleiben. Beseitige kumulative Oktavdrift und halte jede Stimme in einer sinnvollen spielbaren Lage ihres Instruments. Bei einer Registerwarnung für Cello korrigiere unbeabsichtigte Sprünge in länger anhaltende hohe Lagen. Der normale Kernbereich der App reicht bis G4; einzelne hohe Spitzentöne bleiben erlaubt. Eine ausdrücklich beauftragte hohe Lage bleibt erhalten. Antworte ausschließlich als JSON: {"edits":[{"from":"eindeutiger kurzer Originalausschnitt","to":"derselbe Ausschnitt mit korrigierten Oktavzeichen"}]}. Jeder from-Ausschnitt muss genau einmal im Original stehen. Nur tatsächlich notwendige Änderungen; kein vollständiges Dokument, keine Analyse, kein Markdown.';
+ const repairLimit=8000,reasoning={effort:'low'};let cost=0,working=code,report=compiled,feedback='';
+ for(let attempt=1;attempt<=2;attempt++){
+  const messages=[{role:'system',content:instructions},{role:'user',content:[report.warning,feedback,working].filter(Boolean).join('\n\n')}];
+  await log(env,'anfrage',runId,{stage:'realisation',operation:'octave-repair',attempt,model,messages,max_tokens:repairLimit,reasoning_requested:reasoning,output_format:'octave-edits'});
+  try{
+   const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens:repairLimit,reasoning,stream:false,usage:{include:true}})});
+   rejectRedirect(r);const d=await r.json();if(!r.ok)throw Error(d.error?.message||'Oktavkorrektur fehlgeschlagen.');
+   cost+=Number(d.usage?.cost)||0;let content=d.choices?.[0]?.message?.content;
+   if(Array.isArray(content))content=content.filter(x=>x.type==='text').map(x=>x.text).join('\n');
+   await log(env,'antwort',runId,{stage:'realisation',operation:'octave-repair',attempt,model,answer:content,usage:d.usage||null,finish_reason:d.choices?.[0]?.finish_reason});
+   if(d.choices?.[0]?.finish_reason==='length')throw Error('Korrekturantwort wurde abgeschnitten.');
+   const candidate=applyOctaveEdits(working,content),checked=await compileLilyMidi(env,candidate,title,runId,task);
+   await log(env,'korrekturpruefung',runId,{operation:'octave-repair',attempt,source:candidate,...checked});
+   if(checked.error||!checked.url)throw Error(checked.error||'Keine MIDI-Datei.');
+   if(checked.rangeCheck?.status!=='passed'||checked.registerCheck?.status==='warning'){
+    working=candidate;report=checked;
+    throw Error('Es verbleiben Fehler in der geprüften Zwischenfassung: '+checked.warning);
+   }
+   checked.repair='Oktavfehler korrigiert; ausschließlich Oktavzeichen geändert und Tonumfang und Celloregister erneut geprüft.';
+   await log(env,'korrektur',runId,{operation:'octave-repair',attempt,accepted:true});
+   return {code:candidate,compiled:checked,cost};
+  }catch(e){
+   feedback=String(e.message).replaceAll(key,'[API-Schlüssel]');
+   await log(env,'korrektur',runId,{operation:'octave-repair',attempt,accepted:false,error:feedback});
+  }
  }
+ return {code,compiled:{...compiled,repairFailed:true,warning:compiled.warning+'\nAutomatische Oktavkorrektur nach zwei Prüfungen nicht erfolgreich; Original erhalten.'},cost};
 }
 async function handle(req,env){
  const url=new URL(req.url),p=url.pathname;

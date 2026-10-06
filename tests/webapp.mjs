@@ -80,7 +80,7 @@ assert.equal(requests[repairIndex].messages.length,2);assert(requests.some(r=>r.
 const rd=await (await call('/api/diagnosis?runId=aaaaccccdddd1111')).json();assert.equal(rd.costs.realisation,.0001);assert(rd.entries.some(e=>e.event==='korrektur'&&e.accepted===true));
 assert.equal((await value('/api/history/'+repaired.historyId)).entry.techout,answer.replace("c'4","c''4"));assert.equal((await value('/api/workspace')).workspace.costs.realisation,.0001);
 // A candidate changing the music is rejected and cannot overwrite the original.
-repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"d''4"}]});const unsafe=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd2222'}});assert.equal(unsafe.answer,answer);assert(unsafe.compiled.repairFailed);assert(unsafe.compiled.warning.includes('Original erhalten'));assert.equal(unsafe.costs.realisation,.0001);
+repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"d''4"}]});const unsafe=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd2222'}});assert.equal(unsafe.answer,answer);assert(unsafe.compiled.repairFailed);assert(unsafe.compiled.warning.includes('Original erhalten'));assert.equal(unsafe.costs.realisation,.0002);
 repairFinish='length';repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});const truncated=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd5555'}});assert.equal(truncated.answer,answer);assert(truncated.compiled.repairFailed);repairFinish='stop';
 assert.equal(requests.find(r=>r.messages[0].content.startsWith('Repariere ausschließlich')).reasoning.effort,'low');assert(!('reasoning' in requests[0]));
 // An octave-only candidate which remains out of range is also rejected.
