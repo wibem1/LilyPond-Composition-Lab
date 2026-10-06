@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.8
+# LilyPond Composition Lab v0.1.9
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -45,3 +45,5 @@ V0.1.6: Nummerierung als Ersatz für neue Titel entfernt. Bei Wiederholung wird 
 V0.1.7: Technische Standardvorgabe fordert eindeutige absolute Oktavnotation und Prüfung der Klavierlage. Unveränderte alte Standardprompts werden aktualisiert, eigene Bearbeitungen bleiben erhalten. Nach jeder MIDI-Kompilierung werden die klingenden Töne pro Instrument und aktivem GM-Programm geprüft. Grenzüberschreitungen erzeugen einen sichtbaren Hinweis mit Instrument, Ton und Zeitposition; unbekannte Profile werden als unvollständig geprüft gemeldet. Noten/MIDI werden nicht gesperrt und importierte Musik nicht umgeschrieben. Details und Referenzquellen: docs/instrument-ranges.md. Die konkrete Luna-Komposition vom Lauf 9f9f8827226b4896be0138cf3d02e6cb wird mit absoluter Bassnotation korrigiert und anhand der tatsächlich kompilierten MIDI geprüft.
 
 V0.1.8: Instrumentennamen werden nur am ersten Notensystem der Partitur gedruckt. Wiederholungen auf weiteren Systemen und Folgeseiten werden im LilyPond-Layout unterdrückt, auch für markierte Namen und Klavier-/Instrumentengruppen. Quelltext, Instrumente und MIDI-Musik bleiben unverändert. Bestehende Stücke übernehmen die Darstellung beim erneuten Kompilieren.
+
+V0.1.9: Der ursprüngliche freie Standardprompt ist wiederhergestellt. Der später ergänzte Zwang zu absoluter Oktavnotation entfällt; gespeicherte unveränderte technische Standardprompts werden automatisch zurückgesetzt, eigene Systemvorgaben bleiben erhalten. Die Prüfung der tatsächlichen MIDI-Tonhöhen gegen den Instrumententonumfang bleibt aktiv. Eine musikalische Qualitätsverbesserung ist damit noch nicht nachgewiesen.

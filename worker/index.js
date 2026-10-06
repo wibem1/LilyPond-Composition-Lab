@@ -1,4 +1,4 @@
-const VERSION="0.1.8";
+const VERSION="0.1.9";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
@@ -33,8 +33,9 @@ function parseMidi(buffer){
 
 return parseMidi;})();
 const originalTask='Komponiere ein ruhiges, chromatisches Klavierstück in d-Moll mit 8 Takten.';
-const LEGACY_SYSTEM=`Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf.`;
-const DEFAULT_SYSTEM=`Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf. Technische Notation: Verwende absolute Tonhöhen mit ausdrücklich angegebenen Oktaven (ohne \\relative). Prüfe die tatsächlichen Oktavlagen; Verwende für jedes Instrument dessen spielbaren klingenden Tonumfang; für Klavier A0 bis C8. Diese Notationsregel macht keine Vorgaben zur musikalischen Gestaltung.`;
+const ORIGINAL_SYSTEM=`Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf.`;
+const TECHNICAL_SYSTEM=`Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf. Technische Notation: Verwende absolute Tonhöhen mit ausdrücklich angegebenen Oktaven (ohne \\relative). Prüfe die tatsächlichen Oktavlagen; Verwende für jedes Instrument dessen spielbaren klingenden Tonumfang; für Klavier A0 bis C8. Diese Notationsregel macht keine Vorgaben zur musikalischen Gestaltung.`;
+const DEFAULT_SYSTEM=ORIGINAL_SYSTEM;
 // Besetzung wird aus dem ORIGINALAUFTRAG abgeleitet, niemals aus der KI-Realisierung.
 const ENSEMBLE_PATTERNS=[
   {id:'violin',regex:/\b(?:violine|geige|violin)\b/i,label:'Violine',hint:'Violine: separates Staff mit midiInstrument = "violin"'},
@@ -259,7 +260,7 @@ async function run(req,env){
   const task=clean(b.task);if(!task.trim())throw Error('Kompositionsauftrag fehlt.');
   try{await rendererReady()}catch(e){await log(env,'kostenstopp',runId,{error:e.message,durationMs:Date.now()-started});return json({error:e.message+' Keine KI wurde aufgerufen.',runId},412)}
   const suppliedSystem=clean(b.system).trim();
-  const system=!suppliedSystem||suppliedSystem===LEGACY_SYSTEM?DEFAULT_SYSTEM:suppliedSystem;
+  const system=!suppliedSystem||suppliedSystem===TECHNICAL_SYSTEM?DEFAULT_SYSTEM:suppliedSystem;
   const previousTitles=[...new Set((await listAll(env,'history/')).map(o=>{try{return JSON.parse(o.customMetadata?.summary||'{}').title||''}catch{return ''}}).filter(Boolean))];
   const titleContext=[...new Set([...previousTitles,clean(b.title)].filter(t=>t&&!/^Unbenannte[ _]Komposition$/i.test(t)))];
   const max_tokens=Math.min(64000,Math.max(500,parseInt(b.maxTokens)||8000));

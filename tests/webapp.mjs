@@ -29,7 +29,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.8'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.9'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -60,7 +60,13 @@ const compiled=await call('/api/compile-lilypond',{method:'POST',data:{code:answ
 compileError=false;namingDown=true;
 const defaultIndex=requests.length;
 const namingFailed=await value('/api/run',{method:'POST',data:{...data,system:'',runId:'4444555566667777'}});assert(namingFailed.titleWarning.includes('ursprünglichen Titel'));assert.equal(namingFailed.answer,answer);assert(namingFailed.compiled.url);assert.equal((await value('/api/history/'+namingFailed.historyId)).entry.techout,answer);namingDown=false;
-assert(requests[defaultIndex].messages[0].content.includes('absolute Tonhöhen'));assert(requests[defaultIndex].messages[0].content.includes('A0 bis C8'));
+const originalPrompt=requests[defaultIndex].messages[0].content;
+assert(originalPrompt.endsWith('Es gibt keinen vorgeschalteten Entwurf.'));assert(!originalPrompt.includes('Technische Notation'));
+// Restore the unchanged technical standard stored by v0.1.7/8, retaining edited prompts.
+const technicalPrompt=originalPrompt+' Technische Notation: Verwende absolute Tonhöhen mit ausdrücklich angegebenen Oktaven (ohne \\relative). Prüfe die tatsächlichen Oktavlagen; Verwende für jedes Instrument dessen spielbaren klingenden Tonumfang; für Klavier A0 bis C8. Diese Notationsregel macht keine Vorgaben zur musikalischen Gestaltung.';
+const migrationIndex=requests.length;namingDown=true;
+await value('/api/run',{method:'POST',data:{...data,system:technicalPrompt,runId:'5555666677778888'}});
+assert.equal(requests[migrationIndex].messages[0].content,originalPrompt);assert.equal((await value('/api/workspace')).workspace.system,originalPrompt);namingDown=false;
 rendererMidi=driftMidi;
 const drift=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Oktavtest',runId:'88889999aaaabbbb'}});
 assert(drift.warning.includes('Tonumfang prüfen'));assert(drift.url);assert.equal((await call(drift.url)).status,200);assert(drift.pages.length);rendererMidi=null;
