@@ -1,4 +1,4 @@
-const VERSION="0.1.1";
+const VERSION="0.1.2";
 import {PAGE,ASSETS} from "./generated.js";
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
@@ -137,8 +137,10 @@ function normalizeKey(value){
  return key;
 }
 function routerHeaders(key){return {Authorization:'Bearer '+normalizeKey(key),'Content-Type':'application/json','X-OpenRouter-Title':'LilyPond Composition Lab'};}
+function rejectRedirect(r){if(r.status>=300&&r.status<400)throw Error('OpenRouter meldet eine unerwartete Weiterleitung. Die Anfrage wurde zum Schutz des Schlüssels nicht weitergeleitet.');}
 async function checkKey(key){
- const r=await upstream('https://openrouter.ai/api/v1/key',{headers:routerHeaders(key),redirect:'error'},22000);
+ const r=await upstream('https://openrouter.ai/api/v1/key',{headers:routerHeaders(key),redirect:'manual'},22000);
+ rejectRedirect(r);
  if(r.ok)return {verified:true};
  const d=await r.json().catch(()=>({}));
  if(r.status===401||r.status===403){const e=Error('OpenRouter akzeptiert diesen API-Schlüssel nicht. Bitte unter Verbindung den vollständigen OpenRouter-Schlüssel erneut eingeben und prüfen.');e.status=401;e.providerError=d.error?.message||'Anmeldung abgelehnt';throw e;}
@@ -251,7 +253,8 @@ async function run(req,env){
   const messages=[{role:'system',content:system},{role:'user',content:task}];
   const payload={model,messages,max_tokens,stream:false,usage:{include:true}};
   await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:'provider_default'});
-  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'error',body:JSON.stringify(payload)});
+  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify(payload)});
+  rejectRedirect(r);
   const response=await r.json().catch(()=>({error:{message:'Ungültige KI-Antwort'}}));
   if(!r.ok){const e=Error([401,403].includes(r.status)?'OpenRouter hat die Anmeldung abgelehnt. Bitte den Schlüssel unter Verbindung prüfen.':response.error?.message||'OpenRouter HTTP '+r.status);e.status=r.status;e.providerError=response.error?.message;throw e;}
   let answer=response.choices?.[0]?.message?.content;
