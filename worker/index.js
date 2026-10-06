@@ -1,4 +1,4 @@
-const VERSION="0.1.14";
+const VERSION="0.1.15";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
@@ -197,8 +197,9 @@ async function compileLilyMidi(env,code,title,runId,task=''){
 }
 async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,task=''){
  const instructions='Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Keine Neukomposition. Ändere nur Apostrophe/Kommas an nummerierten Tonangaben, auch relative-Anker. Alle anderen Zeichen bleiben erhalten. WICHTIG: In relative bezeichnet eine Note OHNE Oktavzeichen die nächstliegende diatonische Lage zur VORHERIGEN Note (höchstens eine Quarte entfernt). Apostroph bedeutet von DIESER Lage eine Oktave aufwärts, Komma abwärts, NICHT eine feste absolute Oktave! Wiederholte Apostrophe bewirken kumulative Oktavdrift. Rechne die Tonfolge vom Anker Schritt für Schritt durch, einschließlich Taktgrenzen und Akkorden. Ein Sprung e nach h braucht für eine aufsteigende Quinte genau ein Apostroph; ein schrittweiser Aufstieg e fis g a h braucht KEINE Apostrophe. Für normale Klaviermelodik müssen deshalb die meisten marks=0 sein; weitere Zeichen nur für echte größere Sprünge. Auch Bassfiguren müssen vom jeweils vorherigen Ton aus gerechnet werden, nicht pro Takt neu. Jede Stimme muss in sinnvoller spielbarer Instrumentenlage bleiben. Cello: normaler Kernbereich bis G4, einzelne hohe Spitzentöne erlaubt; ausdrücklich gewünschte hohe Lage erhalten. Relative-Anweisungen, Notennamen, Dauern, Tempo, Titel und Ausdruck unverändert lassen. Nummerierte Liste enthält auch Anker und Tonartangaben; Tonartangaben NICHT ändern. Antworte ausschließlich als JSON mit den notwendigen Änderungen: {"edits":[{"id":12,"marks":0},{"id":19,"marks":-1}]}. marks ist die neue ANZAHL der relativen Oktavzeichen: 0=keine, 1=ein Apostroph, -1=ein Komma. Keine from/to-Textausschnitte, kein Notenvolltext, kein Markdown.';
- const repairLimit=24000,reasoning={effort:'medium'};let cost=0,working=code,report=compiled,feedback='';
+ let cost=0,working=code,report=compiled,feedback='';
  for(let attempt=1;attempt<=2;attempt++){
+  const repairLimit=attempt===1?8000:24000,reasoning={effort:attempt===1?'low':'medium'},repairStarted=Date.now();
   const messages=[{role:'system',content:instructions},{role:'user',content:[report.warning,feedback,working,'Nummerierte Tonangaben (id, Ton, Zeile):\n'+JSON.stringify(octaveTokens(working).map(({id,token,line})=>({id,token,line})))].filter(Boolean).join('\n\n')}];
   await log(env,'anfrage',runId,{stage:'realisation',operation:'octave-repair',attempt,model,messages,max_tokens:repairLimit,reasoning_requested:reasoning,output_format:'indexed-octave-marks'});
   try{
@@ -206,7 +207,7 @@ async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,t
    rejectRedirect(r);const d=await r.json();if(!r.ok)throw Error(d.error?.message||'Oktavkorrektur fehlgeschlagen.');
    cost+=Number(d.usage?.cost)||0;let content=d.choices?.[0]?.message?.content;
    if(Array.isArray(content))content=content.filter(x=>x.type==='text').map(x=>x.text).join('\n');
-   await log(env,'antwort',runId,{stage:'realisation',operation:'octave-repair',attempt,model,answer:content,usage:d.usage||null,finish_reason:d.choices?.[0]?.finish_reason});
+   await log(env,'antwort',runId,{stage:'realisation',operation:'octave-repair',attempt,model,answer:content,usage:d.usage||null,finish_reason:d.choices?.[0]?.finish_reason,durationMs:Date.now()-repairStarted});
    if(d.choices?.[0]?.finish_reason==='length')throw Error('Korrekturantwort wurde abgeschnitten.');
    const candidate=applyOctaveEdits(working,content),checked=await compileLilyMidi(env,candidate,title,runId,task);
    await log(env,'korrekturpruefung',runId,{operation:'octave-repair',attempt,source:candidate,...checked});

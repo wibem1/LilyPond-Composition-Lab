@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.14
+# LilyPond Composition Lab v0.1.15
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -59,3 +59,5 @@ V0.1.13: Diagnose c43b07ef: ungültige JSON-Escapes und weiterhin kumulative Okt
 Echter v0.1.13-Test mit Gemini 3.8 Flash auf Diagnose c43b07ef: erste vollständige Korrektur mit 24000 Tokens akzeptiert, Kosten 0,0920715 USD, 140 MIDI-Noten E1–C6, Dauer 31,304304 s bei 92 BPM / 16 Takten 3/4. Nur Oktavzeichen geändert; Notennamen, Rhythmus und übriger Quelltext geschützt. 22968 Denktokens zeigen, dass diese technische Korrektur mehrere Minuten dauern kann. Ergebnis im bestehenden Verlauf und Arbeitsstand gespeichert. Reale Modellantwort als Regressionstest gespeichert.
 
 V0.1.14: Standard-Kompositionsbudget 64000 statt 8000 Tokens; alte 8000-Einstellungen werden auf 64000 angehoben, andere explizite Werte erhalten. Kein reasoning-Parameter in der Komposition. Bei finish_reason=length bleibt die Originalantwort samt Kosten im Verlauf/Arbeitsstand und als unvollständiger Download erhalten; keine Titelvergabe, Kompilierung oder Oktavreparatur des Fragments. Eindeutige Statusmeldung statt irreführendem fehlenden score-Block.
+
+V0.1.15: Technische Oktavkorrektur beginnt mit kurzer Denkstufe low / 8000 Tokens für nummerierte Änderungen. Nur nach gescheiterter Quelltext-, Compiler-, Tonumfang- oder Registerprüfung folgt die tiefere Nachkorrektur medium / 24000. Maximal zwei Aufrufe, Original erhalten, alle Kosten und jetzt Antwortdauer protokolliert. Kompositionsaufruf und Prüfmaßstäbe unverändert.
