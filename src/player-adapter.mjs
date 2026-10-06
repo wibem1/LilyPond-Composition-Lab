@@ -22,7 +22,9 @@ export class SoundFontPlayer {
   if(!this.ctx.audioWorklet)throw Error('Dieser Browser unterstützt den Audio-Player nicht. Bitte Safari oder Chrome aktualisieren.');
   await this.ctx.audioWorklet.addModule('/spessasynth-processor.js');
   this.master=this.ctx.createGain();this.master.gain.value=this.masterVolume;this.master.connect(this.ctx.destination);
-  this.synth=new WorkletSynthesizer(this.ctx,{oneOutput:true});this.synth.connect(this.master);
+  // SpessaSynth 4.3 uses 34 channels for oneOutput, exceeding Chromium's
+  // per-output limit. Its connect() method expects the 17 stereo outputs.
+  this.synth=new WorkletSynthesizer(this.ctx,{oneOutput:false});this.synth.connect(this.master);
   await this.synth.isReady;
   this.synth.setSystemParameter('effectsEnabled',false);
   this.synth.setSystemParameter('voiceCap',256);

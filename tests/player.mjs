@@ -12,6 +12,40 @@ synth.soundBankManager.addSoundBank(SoundBankLoader.fromArrayBuffer(font.slice(0
 console.log('PASS: real stereo PCM is finite and audible before/after font changes:',[a,b,c].map(x=>x.toFixed(2)).join(', '));
 let code=await readFile('src/player-adapter.mjs','utf8');code=code.replace("from '/spessasynth.mjs'",`from '${pathToFileURL(process.cwd()+'/node_modules/spessasynth_lib/dist/index.js')}'`);code=code.replace('WorkletSynthesizer,Sequencer,SoundBankLoader','WorkletSynthesizer,Sequencer');code+='\n'+await readFile('src/midi-reader.mjs','utf8');
 const {SoundFontPlayer}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
+// Exercise the production initializer and real library, enforcing browser node
+// limits rather than bypassing construction with createEngine.
+const previousWindow=globalThis.window,previousNode=globalThis.AudioWorkletNode;
+const connections=[];let moduleLoaded=false;
+class BrowserContext{
+ state='suspended';currentTime=0;destination={};
+ audioWorklet={addModule:async path=>{assert.equal((await get(path)).status,200);moduleLoaded=true;}};
+ async resume(){this.state='running';}async close(){this.state='closed';}
+ createGain(){return {gain:{value:0},connect:dest=>assert.equal(dest,this.destination)};}
+}
+globalThis.window={AudioContext:BrowserContext,addEventListener(){}};
+globalThis.AudioWorkletNode=class{
+ constructor(context,name,options){
+  assert(moduleLoaded,'processor must be registered before construction');
+  if(options.outputChannelCount.some(n=>n>32))throw new DOMException('Unsupported output channel count','NotSupportedError');
+  this.context=context;this.options=options;
+  this.port={postMessage(){},onmessage:null};
+  queueMicrotask(()=>this.port.onmessage({data:{type:'isFullyInitialized',data:{type:'sf3Decoder',data:null}}}));
+ }
+ connect(dest,index){assert(index<this.options.numberOfOutputs,'output index must exist');assert.equal(this.options.outputChannelCount[index],2);connections.push({dest,index});}
+ disconnect(){}
+};
+const {WorkletSynthesizer}=await import('spessasynth_lib');
+moduleLoaded=true;
+const originalError=console.error;console.error=()=>{};
+try{assert.throws(()=>new WorkletSynthesizer(new BrowserContext(),{oneOutput:true}),e=>e.cause?.name==='NotSupportedError');}finally{console.error=originalError;}
+moduleLoaded=false;
+try{
+ const realPlayer=new SoundFontPlayer();await realPlayer.init();
+ assert.equal(connections.length,17);assert(connections.every(c=>c.dest===realPlayer.master));assert(realPlayer.seq);
+ realPlayer.synth.destroy();await realPlayer.ctx.close();
+}finally{globalThis.window=previousWindow;globalThis.AudioWorkletNode=previousNode;}
+assert.equal(await (await get('/soundfont-player.mjs')).text(),await readFile('src/player-adapter.mjs','utf8')+'\n'+await readFile('src/midi-reader.mjs','utf8'));
+console.log('PASS: old configuration reproduces node error; shipped player initializes real library with valid stereo connections.');
 class Events{events=new Map();addEvent(t,id,f){this.events.set(t+id,{t,f});}removeEvent(t,id){this.events.delete(t+id);}emit(t,d={}){for(const e of [...this.events.values()])if(e.t===t)e.f(d);}}
 let fail=false,engines=0;
 const createEngine=async()=>{engines++;const ids=[];return {ctx:{state:'running',currentTime:0,close:async()=>{},resume:async()=>{}},master:{gain:{setTargetAtTime(){}}},synth:{eventHandler:new Events(),stopAll(){},destroy(){},getSnapshot:async()=>{},soundBankManager:{get priorityOrder(){return ids},set priorityOrder(v){ids.splice(0,ids.length,...v)},async addSoundBank(b,id){if(fail){fail=false;throw Error('decode failed')}ids.push(id)},async deleteSoundBank(id){ids.splice(ids.indexOf(id),1)}}},seq:{eventHandler:new Events(),currentTime:0,isFinished:false,pause(){this.playing=false},play(){this.playing=true},loadNewSongList(){queueMicrotask(()=>this.eventHandler.emit('songChange'))}}};};
