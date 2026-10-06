@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
+const {original,corrected}=JSON.parse(await readFile(new URL('./fixtures/cello-register-events.json',import.meta.url),'utf8'));
+assert.equal(checkInstrumentRegisters(original).status,'warning');assert.equal(checkInstrumentRegisters(corrected).status,'passed');
+assert.equal(checkInstrumentRegisters(original,'Cello in hoher Lage').status,'passed');
+const phrase=(program,keys,gap=0)=>({events:[{type:'program',ch:0,value:program},...keys.flatMap((key,i)=>[{type:'on',ch:0,key,sec:i*(3+gap)},{type:'off',ch:0,key,sec:i*(3+gap)+3}])]});
+assert.equal(checkInstrumentRegisters(phrase(42,[70,72,74,75])).status,'warning');
+assert.equal(checkInstrumentRegisters(phrase(42,[60,75,62,64])).status,'passed');
+assert.equal(checkInstrumentRegisters(phrase(42,[67,67,67,67])).status,'passed');
+assert.equal(checkInstrumentRegisters(phrase(42,[70,72,74,75],10)).status,'passed');
+assert.equal(checkInstrumentRegisters(phrase(40,[70,72,74,75])).status,'passed');
+console.log('PASS: actual high/corrected cello MIDI; sustained high register triggers, peaks, G4 boundary, rests, violin and explicit high-register requests remain allowed.');

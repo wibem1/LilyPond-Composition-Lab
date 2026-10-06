@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.10
+# LilyPond Composition Lab v0.1.11
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -49,3 +49,5 @@ V0.1.8: Instrumentennamen werden nur am ersten Notensystem der Partitur gedruckt
 V0.1.9: Der ursprüngliche freie Standardprompt ist wiederhergestellt. Der später ergänzte Zwang zu absoluter Oktavnotation entfällt; gespeicherte unveränderte technische Standardprompts werden automatisch zurückgesetzt, eigene Systemvorgaben bleiben erhalten. Die Prüfung der tatsächlichen MIDI-Tonhöhen gegen den Instrumententonumfang bleibt aktiv. Eine musikalische Qualitätsverbesserung ist damit noch nicht nachgewiesen.
 
 V0.1.10: Der Kompositionsaufruf enthält wieder exakt zwei Nachrichten (Systemtext und Auftrag), wie in v0.1.0. Die Titelsperrliste wird ausschließlich nach dem Komponieren verwendet. Bei erkannten Tonumfangfehlern folgt höchstens ein gesonderter technischer KI-Aufruf. Seine Antwort wird nur übernommen, wenn ausschließlich Oktavzeichen geändert wurden und die neu kompilierte MIDI-Datei sämtliche hinterlegten Tonumfänge einhält. Fehlgeschlagene Korrekturen erhalten das Original und die Warnung. Kosten und Prüfergebnisse stehen vollständig in der Diagnose. Neu kompilieren bleibt ohne KI-Aufruf. Musikalische Qualitätsverbesserung ist nicht garantiert.
+
+V0.1.11: Zusätzlich zum äußersten spielbaren Tonumfang prüft die App länger anhaltende hohe Cellolagen. App-Regel: mindestens vier aufeinanderfolgende Noten oberhalb G4 über mindestens acht Sekunden lösen eine Registerprüfung und beim Komponieren eine technische Oktavkorrektur aus. Das ist eine auf Nutzerwunsch gewählte Registerregel, kein allgemeines Verbot hoher Cellotöne. Einzelne Spitzentöne und ausdrücklich beauftragte hohe Lagen bleiben zulässig. Die Korrektur muss Quelltextvergleich, Tonumfang- und Registerprüfung bestehen; sonst bleiben Original und Warnung erhalten. Die freien Kompositionsvorgaben bleiben unverändert.

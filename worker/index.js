@@ -1,6 +1,7 @@
-const VERSION="0.1.10";
+const VERSION="0.1.11";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
+import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
 import {octaveOnlyChange} from '../src/octave-repair.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
 const randomUUID=()=>crypto.randomUUID();
@@ -170,7 +171,7 @@ async function rendererReady(){
  // Only synthetic notes, never the user's composition, are sent during preflight.
  await rpc('render',{backend:'svg',version:'stable',src:'\\version "2.24.3"\n\\score { { c\'4 d\' e\' f\' } \\layout {} \\midi {} }'},18000);return true;
 }
-async function compileLilyMidi(env,code,title,runId,ensemble=[]){
+async function compileLilyMidi(env,code,title,runId,task=''){
  const started=Date.now();
  if(code.length>200000)return {error:'LilyPond-Quelle ist zu groß.'};
  try{
@@ -181,21 +182,21 @@ async function compileLilyMidi(env,code,title,runId,ensemble=[]){
   const pages=[];
   for(const [i,svg] of (result.files||[]).entries())if(typeof svg==='string'&&svg.includes('<svg'))pages.push({label:'Notenseite '+(i+1),url:await saveFile(env,title+'-Seite-'+(i+1),'svg',svg)});
   if(!pages.length)return {error:'LilyPond erzeugte kein Notenbild.',logs,durationMs:Date.now()-started};
-  let url='',warning='',rangeCheck=null;
+  let url='',warning='',rangeCheck=null,registerCheck=null;
   if(result.midi){
    const bytes=bytes64(result.midi);warning=checkCompiledMidi(bytes,[]);
    if(!warning){
     url=await saveFile(env,title,'mid',bytes);
     const parsed=parseMidi(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length));
-    rangeCheck=checkInstrumentRanges(parsed);warning=rangeCheck.warning;
+    rangeCheck=checkInstrumentRanges(parsed);registerCheck=checkInstrumentRegisters(parsed,task);warning=[rangeCheck.warning,registerCheck.warning].filter(Boolean).join('\n');
    }
   }
   else warning='LilyPond erzeugte keine MIDI-Datei.';
-  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
+  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
-async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled){
- const messages=[{role:'system',content:'Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Ändere ausschließlich Apostrophe und Kommas an Tonhöhen, auch am Anker einer relative-Anweisung. Behalte relative-Anweisungen bei. Keine Neukomposition. Alle Notennamen, Vorzeichen, Dauern, Pausen, Stimmen, Instrumente, Dynamik, Tempo, Titel und sonstigen Anweisungen müssen unverändert bleiben. Beseitige kumulative Oktavdrift und halte jede Stimme in einer sinnvollen spielbaren Lage ihres Instruments. Antworte nur mit dem vollständigen LilyPond-Code.'},{role:'user',content:compiled.rangeCheck.warning+'\n\n'+code}];
+async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,task=''){
+ const messages=[{role:'system',content:'Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Ändere ausschließlich Apostrophe und Kommas an Tonhöhen, auch am Anker einer relative-Anweisung. Behalte relative-Anweisungen bei. Keine Neukomposition. Alle Notennamen, Vorzeichen, Dauern, Pausen, Stimmen, Instrumente, Dynamik, Tempo, Titel und sonstigen Anweisungen müssen unverändert bleiben. Beseitige kumulative Oktavdrift und halte jede Stimme in einer sinnvollen spielbaren Lage ihres Instruments. Bei einer Registerwarnung für Cello korrigiere unbeabsichtigte Sprünge in länger anhaltende hohe Lagen. Der normale Kernbereich der App reicht bis G4; einzelne hohe Spitzentöne bleiben erlaubt. Eine ausdrücklich beauftragte hohe Lage bleibt erhalten. Antworte nur mit dem vollständigen LilyPond-Code.'},{role:'user',content:compiled.warning+'\n\n'+code}];
  let cost=0;
  await log(env,'anfrage',runId,{stage:'realisation',operation:'octave-repair',model,messages,max_tokens:maxTokens});
  try{
@@ -208,10 +209,10 @@ async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled){
   const candidate=String(content||'').trim().replace(/^```(?:lilypond|ly)?\s*\n/i,'').replace(/\n```\s*$/,'').trim();
   await log(env,'antwort',runId,{stage:'realisation',operation:'octave-repair',model,answer:content,usage:d.usage||null,finish_reason:d.choices?.[0]?.finish_reason});
   if(!octaveOnlyChange(code,candidate))throw Error('Korrektur verworfen: Es wurden nicht ausschließlich Oktavzeichen geändert.');
-  const checked=await compileLilyMidi(env,candidate,title,runId);
+  const checked=await compileLilyMidi(env,candidate,title,runId,task);
   await log(env,'korrekturpruefung',runId,{operation:'octave-repair',source:candidate,...checked});
-  if(checked.error||!checked.url||checked.rangeCheck?.status!=='passed')throw Error('Korrektur verworfen: Kompilierung oder Tonumfangprüfung nicht bestanden.');
-  checked.repair='Oktavfehler korrigiert; ausschließlich Oktavzeichen geändert und Tonumfang erneut geprüft.';
+  if(checked.error||!checked.url||checked.rangeCheck?.status!=='passed'||checked.registerCheck?.status==='warning')throw Error('Korrektur verworfen: Kompilierung oder Tonumfangprüfung nicht bestanden.');
+  checked.repair='Oktavfehler korrigiert; ausschließlich Oktavzeichen geändert und Tonumfang und Celloregister erneut geprüft.';
   await log(env,'korrektur',runId,{operation:'octave-repair',accepted:true});
   return {code:candidate,compiled:checked,cost};
  }catch(e){
@@ -243,7 +244,7 @@ async function handle(req,env){
  if(req.method==='GET'&&p==='/api/midi-status'){try{await rendererReady();return json({lilypondInstalled:true,soundfont:'TimGM6mb.sf2',conversion:'LilyPond über Hacklily; MIDI-CSV in der WebApp'})}catch{return json({lilypondInstalled:false})}}
  if(req.method==='POST'&&p==='/api/compile-lilypond'){
   const b=await body(req),code=clean(b.code),runId=safe(b.runId||randomUUID());if(!code.trim())return json({error:'Kein LilyPond-Code vorhanden.'},400);
-  const result=await compileLilyMidi(env,code,compositionFilename(b.title),runId);await log(env,'kompilierung',runId,{source:code,title:compositionFilename(b.title),...result});return json(result,result.error?422:200);
+  const result=await compileLilyMidi(env,code,compositionFilename(b.title),runId,clean(b.task));await log(env,'kompilierung',runId,{source:code,title:compositionFilename(b.title),...result});return json(result,result.error?422:200);
  }
  if(req.method==='POST'&&p==='/api/midi-import'){
   const b=await body(req),bytes=bytes64(String(b.base64||''));if(bytes.length<18||bytes.length>900000||String.fromCharCode(...bytes.subarray(0,4))!=='MThd')return json({error:'Bitte eine gültige Standard-MIDI-Datei (max. 900 KB) wählen.'},400);
@@ -338,10 +339,10 @@ async function run(req,env){
   if(title!==proposedTitle)code=code.replace(/\btitle\s*=\s*"([^"\n]+)"/,()=>`title = "${title}"`);
   if(usage)usage.cost=(Number(usage.cost)||0)+titleCost;
   base.title=title;base.techout=code;base.costs.composition+=titleCost;
-  let compiled=code?await compileLilyMidi(env,code,title,runId):{error:'Die KI lieferte keinen LilyPond-Code.'};
+  let compiled=code?await compileLilyMidi(env,code,title,runId,task):{error:'Die KI lieferte keinen LilyPond-Code.'};
   await log(env,'kompilierung',runId,{source:code,...compiled});
-  if(compiled.rangeCheck?.instruments.some(x=>x.violations>0)){
-   const repaired=await repairOctaves(env,code,title,runId,key,model,max_tokens,compiled);
+  if(compiled.rangeCheck?.instruments.some(x=>x.violations>0)||compiled.registerCheck?.status==='warning'){
+   const repaired=await repairOctaves(env,code,title,runId,key,model,max_tokens,compiled,task);
    code=repaired.code;compiled=repaired.compiled;base.techout=code;base.costs.realisation+=repaired.cost;
   }
   if(code)downloads.push({label:'LilyPond-Datei',url:await saveFile(env,title,'ly',code)});
