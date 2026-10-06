@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.2
+# LilyPond Composition Lab v0.1.3
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -33,3 +33,5 @@ Private WebApp über Sites mit `BUCKET` (R2) und Runtime-Secret `LAB_KEY_ENCRYPT
 V0.1.1: Schlüssel werden von kopierten Bearer-Präfixen, Zeilenumbrüchen und unsichtbaren Zeichen bereinigt. OpenRouter prüft die Anmeldung über GET /api/v1/key vor Speicherung und vor der Komposition; bei Ablehnung bleibt ein vorheriger gespeicherter Schlüssel erhalten. Verbindung prüfen startet keine Komposition. Fehlerprotokolle enthalten Providerstatus und Fehlermeldung, niemals den Schlüssel. Direkte Provider-Schlüssel werden mit eindeutiger Erklärung abgelehnt.
 
 V0.1.2: Cloudflare-kompatibles redirect=manual für OpenRouter-Schlüsselprüfung und Komposition. HTTP-Weiterleitungen werden vor Antwortverarbeitung explizit abgebrochen, der Schlüssel wird nicht an andere Ziele weitergegeben. Regressionstest simuliert die Einschränkung der Worker-Laufzeit und einen HTTP-302-Fall.
+
+V0.1.3: API-Schlüsselfeld als normales Textfeld mit ausgeschalteter Autokorrektur, Großschreibung und Autovervollständigung sowie Hinweisen an Passwortmanager. Kein password-Eingabefeld. Bereits verschlüsselt gespeicherte Schlüssel bleiben unverändert; die App liest den Schlüssel nicht in das Eingabefeld zurück. Browser-Verhalten auf Android ist nicht hier verifiziert.

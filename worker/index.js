@@ -1,4 +1,4 @@
-const VERSION="0.1.2";
+const VERSION="0.1.3";
 import {PAGE,ASSETS} from "./generated.js";
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
