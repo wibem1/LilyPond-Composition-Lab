@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
+import {parseMidi} from '../src/midi-reader.mjs';
+const fixture=async name=>{const b=await readFile(new URL('./fixtures/'+name,import.meta.url));return parseMidi(b.buffer.slice(b.byteOffset,b.byteOffset+b.length));};
+const original=await fixture('luna-octave-drift.mid'),fixed=await fixture('luna-octaves-corrected.mid');
+assert.equal(checkInstrumentRanges(original).status,'warning');assert.equal(checkInstrumentRanges(fixed).status,'passed');
+const notes=(m,ch)=>m.events.filter(e=>e.type==='on'&&e.ch===ch);
+assert.deepEqual(notes(fixed,0),notes(original,0));assert.deepEqual(notes(fixed,1).map(e=>[e.tick,e.vel]),notes(original,1).map(e=>[e.tick,e.vel]));
+assert.equal(notes(fixed,1).length,46);
+const prog=(ch,value)=>({type:'program',ch,value});const note=(ch,key)=>({type:'on',ch,key,sec:1.25});
+const report=events=>checkInstrumentRanges({events});
+for(const key of [21,108])assert.equal(report([note(0,key)]).status,'passed');
+for(const key of [20,109,253])assert.equal(report([note(0,key)]).status,'warning');
+assert.equal(report([prog(0,73),note(0,59),note(0,101)]).status,'passed');
+assert.equal(report([prog(0,73),note(0,58)]).status,'warning');
+// Same sounding pitch allowed on piano, invalid after changing to violin.
+const change=report([note(0,48),prog(0,40),note(0,48)]);assert.equal(change.instruments.length,2);assert.equal(change.instruments[0].violations,0);assert.equal(change.instruments[1].violations,1);
+assert(change.warning.includes('Violine'));assert(change.warning.includes('C3'));assert(change.warning.includes('1.25 s'));
+assert.equal(report([prog(0,42),note(0,36),note(0,81)]).status,'passed');
+assert.equal(report([prog(0,71),note(0,50),note(0,94)]).status,'passed');
+assert.equal(report([note(9,36)]).status,'passed');assert.equal(report([note(9,253)]).status,'warning');
+const unknown=report([prog(0,104),note(0,60)]);assert.equal(unknown.status,'incomplete');assert(unknown.warning.includes('Kein verlässlicher'));
+assert.equal(report([prog(0,80),note(0,0),note(0,127)]).status,'passed');
+console.log('PASS: actual broken/corrected LilyPond MIDI, unchanged right hand/rhythm, instrument-specific sounding ranges, inclusive limits, program changes, drums, explicit unknown profiles.');

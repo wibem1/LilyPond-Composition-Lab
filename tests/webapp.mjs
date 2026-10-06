@@ -10,12 +10,13 @@ class MemoryBucket{
 }
 const env={BUCKET:new MemoryBucket(),LAB_KEY_ENCRYPTION_KEY:btoa('01234567890123456789012345678901')};
 const tiny=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-response.json',import.meta.url),'utf8')).result;
+const driftMidi=(await readFile(new URL('./fixtures/luna-octave-drift.mid',import.meta.url))).toString('base64');let rendererMidi=null;
 let paid=0,rendererDown=false,compileError=false,requests=[],rejectKey=false,redirectKey=false;
 let namingAnswers=['Teststück · 2','Nächtlicher Dialog','Dämmerpfade'],namingDown=false;
 const answer='\\version "2.24.3"\n\\header { title = "Teststück" }\n\\score { { c\'4 d\' e\' f\' } \\layout {} \\midi {} }';
 class Socket extends EventTarget{
  accept(){}
- send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:tiny})})))}
+ send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
  close(){}
 }
 globalThis.fetch=async(url,opts={})=>{
@@ -28,7 +29,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.6'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.7'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -57,7 +58,12 @@ assert(repeated.compiled.url.includes(encodeURIComponent(repeated.title)));
 compileError=true;const failed=await value('/api/run',{method:'POST',data:{...data,runId:'fedcba9876543210'}});assert(failed.compiled.error);assert.equal(failed.title,'Dämmerpfade');assert.equal((await value('/api/history/'+failed.historyId)).entry.techout,failed.answer);assert.equal(failed.rawAnswer,answer);assert((await value('/api/workspace')).workspace.compiler.includes('line 3'));
 const compiled=await call('/api/compile-lilypond',{method:'POST',data:{code:answer,runId:'abcdef0123456789'}});assert.equal(compiled.status,422);assert((await compiled.json()).logs.includes('line 3'));
 compileError=false;namingDown=true;
-const namingFailed=await value('/api/run',{method:'POST',data:{...data,runId:'4444555566667777'}});assert(namingFailed.titleWarning.includes('ursprünglichen Titel'));assert.equal(namingFailed.answer,answer);assert(namingFailed.compiled.url);assert.equal((await value('/api/history/'+namingFailed.historyId)).entry.techout,answer);namingDown=false;
+const defaultIndex=requests.length;
+const namingFailed=await value('/api/run',{method:'POST',data:{...data,system:'',runId:'4444555566667777'}});assert(namingFailed.titleWarning.includes('ursprünglichen Titel'));assert.equal(namingFailed.answer,answer);assert(namingFailed.compiled.url);assert.equal((await value('/api/history/'+namingFailed.historyId)).entry.techout,answer);namingDown=false;
+assert(requests[defaultIndex].messages[0].content.includes('absolute Tonhöhen'));assert(requests[defaultIndex].messages[0].content.includes('A0 bis C8'));
+rendererMidi=driftMidi;
+const drift=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Oktavtest',runId:'88889999aaaabbbb'}});
+assert(drift.warning.includes('Tonumfang prüfen'));assert(drift.url);assert.equal((await call(drift.url)).status,200);assert(drift.pages.length);rendererMidi=null;
 rendererDown=true;const count=paid;assert.equal((await call('/api/run',{method:'POST',data:{...data,runId:'aaaabbbbccccdddd'}})).status,412);assert.equal(paid,count);assert.equal((await call('/api/diagnosis?runId=aaaabbbbccccdddd')).status,200);
 await value('/api/workspace',{method:'POST',data:{workspace:{...ws,key:'DO-NOT-SAVE'}}});assert(!JSON.stringify(await value('/api/workspace')).includes('DO-NOT-SAVE'));
 await value('/api/history/'+result.historyId,{method:'DELETE'});assert.equal((await call('/api/history/'+result.historyId)).status,404);

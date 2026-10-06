@@ -1,5 +1,6 @@
-const VERSION="0.1.6";
+const VERSION="0.1.7";
 import {PAGE,ASSETS} from "./generated.js";
+import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
 const tag=(v,p)=>String.fromCharCode(...new Uint8Array(v.buffer,v.byteOffset+p,4));
@@ -31,7 +32,8 @@ function parseMidi(buffer){
 
 return parseMidi;})();
 const originalTask='Komponiere ein ruhiges, chromatisches Klavierstück in d-Moll mit 8 Takten.';
-const DEFAULT_SYSTEM=`Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf.`;
+const LEGACY_SYSTEM=`Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf.`;
+const DEFAULT_SYSTEM=`Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf. Technische Notation: Verwende absolute Tonhöhen mit ausdrücklich angegebenen Oktaven (ohne \\relative). Prüfe die tatsächlichen Oktavlagen; Verwende für jedes Instrument dessen spielbaren klingenden Tonumfang; für Klavier A0 bis C8. Diese Notationsregel macht keine Vorgaben zur musikalischen Gestaltung.`;
 // Besetzung wird aus dem ORIGINALAUFTRAG abgeleitet, niemals aus der KI-Realisierung.
 const ENSEMBLE_PATTERNS=[
   {id:'violin',regex:/\b(?:violine|geige|violin)\b/i,label:'Violine',hint:'Violine: separates Staff mit midiInstrument = "violin"'},
@@ -176,10 +178,17 @@ async function compileLilyMidi(env,code,title,runId,ensemble=[]){
   const pages=[];
   for(const [i,svg] of (result.files||[]).entries())if(typeof svg==='string'&&svg.includes('<svg'))pages.push({label:'Notenseite '+(i+1),url:await saveFile(env,title+'-Seite-'+(i+1),'svg',svg)});
   if(!pages.length)return {error:'LilyPond erzeugte kein Notenbild.',logs,durationMs:Date.now()-started};
-  let url='',warning='';
-  if(result.midi){const bytes=bytes64(result.midi);warning=checkCompiledMidi(bytes,[]);if(!warning)url=await saveFile(env,title,'mid',bytes);}
+  let url='',warning='',rangeCheck=null;
+  if(result.midi){
+   const bytes=bytes64(result.midi);warning=checkCompiledMidi(bytes,[]);
+   if(!warning){
+    url=await saveFile(env,title,'mid',bytes);
+    const parsed=parseMidi(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length));
+    rangeCheck=checkInstrumentRanges(parsed);warning=rangeCheck.warning;
+   }
+  }
   else warning='LilyPond erzeugte keine MIDI-Datei.';
-  return {url,label:'MIDI-Datei',pages,logs,warning,addedMidiBlock:prepared.added,durationMs:Date.now()-started};
+  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
 async function handle(req,env){
@@ -248,7 +257,8 @@ async function run(req,env){
   if(!model.includes('/'))throw Error('Bitte ein Modell auswählen.');
   const task=clean(b.task);if(!task.trim())throw Error('Kompositionsauftrag fehlt.');
   try{await rendererReady()}catch(e){await log(env,'kostenstopp',runId,{error:e.message,durationMs:Date.now()-started});return json({error:e.message+' Keine KI wurde aufgerufen.',runId},412)}
-  const system=clean(b.system).trim()||DEFAULT_SYSTEM;
+  const suppliedSystem=clean(b.system).trim();
+  const system=!suppliedSystem||suppliedSystem===LEGACY_SYSTEM?DEFAULT_SYSTEM:suppliedSystem;
   const previousTitles=[...new Set((await listAll(env,'history/')).map(o=>{try{return JSON.parse(o.customMetadata?.summary||'{}').title||''}catch{return ''}}).filter(Boolean))];
   const titleContext=[...new Set([...previousTitles,clean(b.title)].filter(t=>t&&!/^Unbenannte[ _]Komposition$/i.test(t)))];
   const max_tokens=Math.min(64000,Math.max(500,parseInt(b.maxTokens)||8000));
