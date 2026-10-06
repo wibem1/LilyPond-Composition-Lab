@@ -30,7 +30,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.12'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.13'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -82,7 +82,7 @@ assert.equal((await value('/api/history/'+repaired.historyId)).entry.techout,ans
 // A candidate changing the music is rejected and cannot overwrite the original.
 repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"d''4"}]});const unsafe=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd2222'}});assert.equal(unsafe.answer,answer);assert(unsafe.compiled.repairFailed);assert(unsafe.compiled.warning.includes('Original erhalten'));assert.equal(unsafe.costs.realisation,.0002);
 repairFinish='length';repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});const truncated=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd5555'}});assert.equal(truncated.answer,answer);assert(truncated.compiled.repairFailed);repairFinish='stop';
-assert.equal(requests.find(r=>r.messages[0].content.startsWith('Repariere ausschließlich')).reasoning.effort,'low');assert(!('reasoning' in requests[0]));
+assert.equal(requests.find(r=>r.messages[0].content.startsWith('Repariere ausschließlich')).reasoning.effort,'medium');assert(!('reasoning' in requests[0]));
 // An octave-only candidate which remains out of range is also rejected.
 repairMidi=null;repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"c''4"}]});const stillBad=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd3333'}});assert.equal(stillBad.answer,answer);assert(stillBad.compiled.warning.includes('Original erhalten'));
 // Register drift triggers repair even when the absolute playable range passes.

@@ -1,8 +1,8 @@
-const VERSION="0.1.12";
+const VERSION="0.1.13";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
-import {applyOctaveEdits} from '../src/octave-repair.mjs';
+import {applyOctaveEdits,octaveTokens} from '../src/octave-repair.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
@@ -196,11 +196,11 @@ async function compileLilyMidi(env,code,title,runId,task=''){
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
 async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,task=''){
- const instructions='Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Ändere ausschließlich Apostrophe und Kommas an Tonhöhen, auch am Anker einer relative-Anweisung. Behalte relative-Anweisungen bei. Keine Neukomposition. Alle Notennamen, Vorzeichen, Dauern, Pausen, Stimmen, Instrumente, Dynamik, Tempo, Titel und sonstigen Anweisungen müssen unverändert bleiben. Beseitige kumulative Oktavdrift und halte jede Stimme in einer sinnvollen spielbaren Lage ihres Instruments. Bei einer Registerwarnung für Cello korrigiere unbeabsichtigte Sprünge in länger anhaltende hohe Lagen. Der normale Kernbereich der App reicht bis G4; einzelne hohe Spitzentöne bleiben erlaubt. Eine ausdrücklich beauftragte hohe Lage bleibt erhalten. Antworte ausschließlich als JSON: {"edits":[{"from":"eindeutiger kurzer Originalausschnitt","to":"derselbe Ausschnitt mit korrigierten Oktavzeichen"}]}. Jeder from-Ausschnitt muss genau einmal im Original stehen. Nur tatsächlich notwendige Änderungen; kein vollständiges Dokument, keine Analyse, kein Markdown.';
- const repairLimit=8000,reasoning={effort:'low'};let cost=0,working=code,report=compiled,feedback='';
+ const instructions='Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Keine Neukomposition. Ändere nur Apostrophe/Kommas an nummerierten Tonangaben, auch relative-Anker. Alle anderen Zeichen bleiben erhalten. WICHTIG: In relative bezeichnet eine Note OHNE Oktavzeichen die nächstliegende diatonische Lage zur VORHERIGEN Note (höchstens eine Quarte entfernt). Apostroph bedeutet von DIESER Lage eine Oktave aufwärts, Komma abwärts, NICHT eine feste absolute Oktave! Wiederholte Apostrophe bewirken kumulative Oktavdrift. Rechne die Tonfolge vom Anker Schritt für Schritt durch, einschließlich Taktgrenzen und Akkorden. Ein Sprung e nach h braucht für eine aufsteigende Quinte genau ein Apostroph; ein schrittweiser Aufstieg e fis g a h braucht KEINE Apostrophe. Für normale Klaviermelodik müssen deshalb die meisten marks=0 sein; weitere Zeichen nur für echte größere Sprünge. Auch Bassfiguren müssen vom jeweils vorherigen Ton aus gerechnet werden, nicht pro Takt neu. Jede Stimme muss in sinnvoller spielbarer Instrumentenlage bleiben. Cello: normaler Kernbereich bis G4, einzelne hohe Spitzentöne erlaubt; ausdrücklich gewünschte hohe Lage erhalten. Relative-Anweisungen, Notennamen, Dauern, Tempo, Titel und Ausdruck unverändert lassen. Nummerierte Liste enthält auch Anker und Tonartangaben; Tonartangaben NICHT ändern. Antworte ausschließlich als JSON mit den notwendigen Änderungen: {"edits":[{"id":12,"marks":0},{"id":19,"marks":-1}]}. marks ist die neue ANZAHL der relativen Oktavzeichen: 0=keine, 1=ein Apostroph, -1=ein Komma. Keine from/to-Textausschnitte, kein Notenvolltext, kein Markdown.';
+ const repairLimit=8000,reasoning={effort:'medium'};let cost=0,working=code,report=compiled,feedback='';
  for(let attempt=1;attempt<=2;attempt++){
-  const messages=[{role:'system',content:instructions},{role:'user',content:[report.warning,feedback,working].filter(Boolean).join('\n\n')}];
-  await log(env,'anfrage',runId,{stage:'realisation',operation:'octave-repair',attempt,model,messages,max_tokens:repairLimit,reasoning_requested:reasoning,output_format:'octave-edits'});
+  const messages=[{role:'system',content:instructions},{role:'user',content:[report.warning,feedback,working,'Nummerierte Tonangaben (id, Ton, Zeile):\n'+JSON.stringify(octaveTokens(working).map(({id,token,line})=>({id,token,line})))].filter(Boolean).join('\n\n')}];
+  await log(env,'anfrage',runId,{stage:'realisation',operation:'octave-repair',attempt,model,messages,max_tokens:repairLimit,reasoning_requested:reasoning,output_format:'indexed-octave-marks'});
   try{
    const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens:repairLimit,reasoning,stream:false,usage:{include:true}})});
    rejectRedirect(r);const d=await r.json();if(!r.ok)throw Error(d.error?.message||'Oktavkorrektur fehlgeschlagen.');

@@ -21,3 +21,10 @@ const actual=JSON.parse(await readFile(new URL('./fixtures/gemini-repair-edits.j
 let repaired=actual.source;for(const response of actual.responses)repaired=applyOctaveEdits(repaired,response);
 assert(octaveOnlyChange(actual.source,repaired));assert(repaired.includes('  es2 c |'));assert(!repaired.includes("  c'4.(\\mf"));
 console.log('PASS: both real Gemini correction responses, including es octave edits formerly rejected.');
+const {octaveTokens}=await import('../src/octave-repair.mjs');
+const indexed='\\header { title = "c\'" }\n% d\'\nupper = \\relative c\' { \\key e \\minor b\'4 e\'\'4. dis\'\'8 <g b e\'>2 }';
+const pitches=octaveTokens(indexed);assert.deepEqual(pitches.map(x=>x.token),["c'",'e',"b'","e''","dis''",'g','b',"e'"]);
+const indexedResult=applyOctaveEdits(indexed,JSON.stringify({edits:[{id:2,marks:0},{id:3,marks:0},{id:4,marks:0}]}));
+assert(indexedResult.includes('b4 e4. dis8'));assert(octaveOnlyChange(indexed,indexedResult));
+for(const edits of [[{id:2,marks:1.2}],[{id:999,marks:0}],[{id:2,marks:9}],[{id:2,marks:0},{id:2,marks:1}],[{id:'2',marks:0}]])assert.throws(()=>applyOctaveEdits(indexed,JSON.stringify({edits})));
+console.log('PASS: numbered octave changes preserve commands, comments, strings, pitch classes and rhythm; reject duplicate IDs, missing IDs and invalid marks.');
