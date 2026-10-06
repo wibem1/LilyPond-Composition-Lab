@@ -38,7 +38,7 @@ $('compose').onclick=async()=>{
   await compiledResult(d.compiled);await persist();await refreshHistory();
   message(d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
   if(d.finish_reason==='length')message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
- }catch(e){message('Fehler: '+e.message);queueSave()}finally{setBusy(false);renderResults()}
+ }catch(e){message('Fehler: '+e.message);if(e.details&&/Schlüssel|Anmeldung/.test(e.message)){$('connectionDetails').open=true;$('connection').scrollIntoView({behavior:'smooth'});$('keyStatus').textContent=e.message;}queueSave()}finally{setBusy(false);renderResults()}
 };
 $('compile').onclick=async()=>{if(busy)return;const code=$('code').value;if(!code.trim())return message('Bitte LilyPond-Code eingeben oder öffnen.');setBusy(true);state.runId||=crypto.randomUUID().replaceAll('-','');message('LilyPond wird kompiliert …');try{const d=await api('/api/compile-lilypond',{code,title:$('title').value,runId:state.runId});await compiledResult(d);await saveHistory();message('Kompiliert · '+d.pages.length+' Seite(n).')}catch(e){state.compiler=[e.message,e.details?.logs].filter(Boolean).join('\n');invalidate();$('compiler').textContent=state.compiler;message('Compilerfehler: '+e.message);await saveHistory().catch(x=>{$('memoryStatus').textContent=x.message})}finally{setBusy(false);renderResults()}};
 $('saveLy').onclick=()=>{const url=URL.createObjectURL(new Blob([$('code').value],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=($('title').value.replace(/[\\/:*?"<>|]/g,'_')||'Komposition')+'.ly';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};
@@ -48,8 +48,9 @@ $('saveHistory').onclick=()=>saveHistory().catch(e=>{$('memoryStatus').textConte
 $('openHistory').onclick=async()=>{try{if(!$('history').value)return;apply((await api('/api/history/'+$('history').value)).entry);await persist()}catch(e){$('memoryStatus').textContent=e.message}};
 $('deleteHistory').onclick=async()=>{const id=$('history').value;if(!id)return;if(!confirm('Die ausgewählte Komposition aus dem Verlauf löschen?'))return;try{await api('/api/history/'+id,null,'DELETE');if(state.historyId===id)state.historyId='';await refreshHistory();await persist()}catch(e){$('memoryStatus').textContent=e.message}};
 $('diagnosis').onclick=async()=>{if(state.runId)location.href='/api/diagnosis?runId='+encodeURIComponent(state.runId);};
-async function keyStatus(){const d=await api('/api/key-status');$('keyStatus').textContent=d.stored?'Schlüssel für diese App verschlüsselt gespeichert.':'Noch kein Schlüssel gespeichert.';$('saveKey').disabled=!d.canStore;}
+async function keyStatus(){const d=await api('/api/key-status');$('keyStatus').textContent=d.stored?'Schlüssel für diese App verschlüsselt gespeichert. Mit „Verbindung prüfen“ testen.':'Noch kein Schlüssel gespeichert.';$('saveKey').disabled=!d.canStore;}
 $('saveKey').onclick=async()=>{try{await api('/api/key-store',{key:$('key').value});$('key').value='';await keyStatus()}catch(e){$('keyStatus').textContent=e.message}};
+$('checkKey').onclick=async()=>{try{await api('/api/key-check',{key:$('key').value});$('keyStatus').textContent='OpenRouter-Verbindung geprüft. Der Schlüssel wird akzeptiert. Keine Komposition gestartet.'}catch(e){$('keyStatus').textContent=e.message}};
 $('deleteKey').onclick=async()=>{try{await api('/api/key-store',null,'DELETE');$('key').value='';await keyStatus()}catch(e){$('keyStatus').textContent=e.message}};
 $('reloadModels').onclick=models;$('provider').onchange=()=>{populateModels();queueSave()};$('model').onchange=()=>{modelChoice=$('model').value;prices();queueSave()};
 for(const id of ['task','title','system','tokens'])$(id).oninput=queueSave;$('code').oninput=invalidate;

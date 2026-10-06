@@ -1,4 +1,4 @@
-const VERSION="0.1.0";
+const VERSION="0.1.1";
 import {PAGE,ASSETS} from "./generated.js";
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
@@ -127,6 +127,23 @@ async function saveHistory(env,b){
 }
 function validDownloads(d){return Array.isArray(d)?d.filter(x=>typeof x?.url==='string'&&x.url.startsWith('/download/')&&typeof x.label==='string').slice(0,8).map(x=>({label:x.label.slice(0,100),url:x.url.slice(0,500)})):[]}
 async function encryptionKey(env){if(!env.LAB_KEY_ENCRYPTION_KEY)throw Error('Schlüsselspeicherung derzeit nicht verfügbar. Key im Eingabefeld verwenden.');return crypto.subtle.importKey('raw',bytes64(env.LAB_KEY_ENCRYPTION_KEY),'AES-GCM',false,['encrypt','decrypt'])}
+function keyInputError(message){const e=Error(message);e.status=400;return e;}
+function normalizeKey(value){
+ let key=String(value??'').trim().replace(/^(?:Authorization\s*:\s*)?Bearer\s+/i,'').trim();
+ if((key.startsWith('"')&&key.endsWith('"'))||(key.startsWith("'")&&key.endsWith("'")))key=key.slice(1,-1);
+ key=key.replace(/[\s\u200B-\u200D\uFEFF]/g,'');
+ if(!key)throw keyInputError('OpenRouter-Schlüssel fehlt. Bitte unter Verbindung eingeben oder speichern.');
+ if(!/^sk-or-v1-[A-Za-z0-9_-]+$/.test(key))throw keyInputError('Bitte den vollständigen OpenRouter-API-Schlüssel eingeben (beginnt mit sk-or-v1-). Direkte OpenAI-, Anthropic- oder Gemini-Schlüssel funktionieren hier nicht.');
+ return key;
+}
+function routerHeaders(key){return {Authorization:'Bearer '+normalizeKey(key),'Content-Type':'application/json','X-OpenRouter-Title':'LilyPond Composition Lab'};}
+async function checkKey(key){
+ const r=await upstream('https://openrouter.ai/api/v1/key',{headers:routerHeaders(key),redirect:'error'},22000);
+ if(r.ok)return {verified:true};
+ const d=await r.json().catch(()=>({}));
+ if(r.status===401||r.status===403){const e=Error('OpenRouter akzeptiert diesen API-Schlüssel nicht. Bitte unter Verbindung den vollständigen OpenRouter-Schlüssel erneut eingeben und prüfen.');e.status=401;e.providerError=d.error?.message||'Anmeldung abgelehnt';throw e;}
+ throw Error('Schlüsselprüfung bei OpenRouter derzeit nicht möglich (HTTP '+r.status+').');
+}
 async function storedKey(env){const d=await getJson(env,'settings/key.json');if(!d)return '';const k=await encryptionKey(env);return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes64(d.iv)},k,bytes64(d.data)))}
 async function storeKey(env,key){const k=await encryptionKey(env),iv=crypto.getRandomValues(new Uint8Array(12));const data=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,utf8.encode(key));await putJson(env,'settings/key.json',{iv:to64(iv),data:to64(new Uint8Array(data))})}
 async function rpc(method,params={},timeout=45000){
@@ -173,7 +190,8 @@ async function handle(req,env){
  if(req.method==='GET'&&ASSETS[p])return text(asset(p),ASSETS[p].type);
  if(!env.BUCKET)return json({error:'Datenspeicher derzeit nicht verfügbar. Bitte später erneut versuchen.'},503);
  if(req.method==='GET'&&p==='/api/key-status')return json({stored:!!await getJson(env,'settings/key.json'),canStore:!!env.LAB_KEY_ENCRYPTION_KEY});
- if(req.method==='POST'&&p==='/api/key-store'){const b=await body(req),key=clean(b.key).trim();if(!key)return json({error:'API-Schlüssel fehlt.'},400);await storeKey(env,key);return json({stored:true})}
+ if(req.method==='POST'&&p==='/api/key-store'){const b=await body(req),key=normalizeKey(b.key);await checkKey(key);await storeKey(env,key);return json({stored:true,verified:true})}
+ if(req.method==='POST'&&p==='/api/key-check'){const b=await body(req);try{return json(await checkKey(normalizeKey(b.key||await storedKey(env))))}catch(e){return json({error:e.message},e.status||400)}}
  if(req.method==='DELETE'&&p==='/api/key-store'){await env.BUCKET.delete('settings/key.json');return json({stored:false})}
  if(req.method==='GET'&&p==='/api/models'){
   const r=await upstream('https://openrouter.ai/api/v1/models',{},22000);if(!r.ok)throw Error(`OpenRouter-Modellkatalog: HTTP ${r.status}`);
@@ -223,7 +241,7 @@ async function run(req,env){
  const b=await body(req),runId=safe(b.runId||randomUUID().replaceAll('-','')),started=Date.now();
  let key='';
  try{
-  key=clean(b.key).trim()||await storedKey(env);const model=clean(b.model).trim();
+  key=normalizeKey(b.key||await storedKey(env));await checkKey(key);const model=clean(b.model).trim();
   if(!key)throw Error('API-Schlüssel fehlt. Bitte unter Verbindung eingeben oder speichern.');
   if(!model.includes('/'))throw Error('Bitte ein Modell auswählen.');
   const task=clean(b.task);if(!task.trim())throw Error('Kompositionsauftrag fehlt.');
@@ -233,9 +251,9 @@ async function run(req,env){
   const messages=[{role:'system',content:system},{role:'user',content:task}];
   const payload={model,messages,max_tokens,stream:false,usage:{include:true}};
   await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:'provider_default'});
-  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json','X-Title':'LilyPond Composition Lab'},body:JSON.stringify(payload)});
+  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'error',body:JSON.stringify(payload)});
   const response=await r.json().catch(()=>({error:{message:'Ungültige KI-Antwort'}}));
-  if(!r.ok)throw Error(response.error?.message||'OpenRouter HTTP '+r.status);
+  if(!r.ok){const e=Error([401,403].includes(r.status)?'OpenRouter hat die Anmeldung abgelehnt. Bitte den Schlüssel unter Verbindung prüfen.':response.error?.message||'OpenRouter HTTP '+r.status);e.status=r.status;e.providerError=response.error?.message;throw e;}
   let answer=response.choices?.[0]?.message?.content;
   if(Array.isArray(answer))answer=answer.filter(x=>x.type==='text').map(x=>x.text).join('\n');
   answer=typeof answer==='string'?answer:'';
@@ -253,6 +271,6 @@ async function run(req,env){
   const entry={...base,id:saved.id,downloads,midiUrl:compiled.url||'',pages:compiled.pages||[],compiler:compiled.logs||compiled.error||''};
   await saveHistory(env,entry);await putJson(env,'workspace/current.json',{...entry,historyId:saved.id});
   return json({runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,finish_reason:finish,compiled,durationMs:Date.now()-started});
- }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{error,durationMs:Date.now()-started});return json({error,runId},502)}
+ }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{error,status:e.status||null,providerError:e.providerError?.replaceAll(key||'\u0000','[API-Schlüssel]')||null,durationMs:Date.now()-started});return json({error,runId},e.status===401?401:502)}
 }
-export default {async fetch(request,env,ctx){try{return await handle(request,env)}catch(e){return json({error:e.name==='AbortError'?'Zeitüberschreitung beim Onlinedienst.':String(e.message||e)},500)}}};
+export default {async fetch(request,env,ctx){try{return await handle(request,env)}catch(e){return json({error:e.name==='AbortError'?'Zeitüberschreitung beim Onlinedienst.':String(e.message||e)},e.status||500)}}};
