@@ -11,6 +11,7 @@ class MemoryBucket{
 const env={BUCKET:new MemoryBucket(),LAB_KEY_ENCRYPTION_KEY:btoa('01234567890123456789012345678901')};
 const tiny=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-response.json',import.meta.url),'utf8')).result;
 let paid=0,rendererDown=false,compileError=false,requests=[],rejectKey=false,redirectKey=false;
+let namingAnswers=['Teststück · 2','Nächtlicher Dialog','Dämmerpfade'],namingDown=false;
 const answer='\\version "2.24.3"\n\\header { title = "Teststück" }\n\\score { { c\'4 d\' e\' f\' } \\layout {} \\midi {} }';
 class Socket extends EventTarget{
  accept(){}
@@ -22,12 +23,12 @@ globalThis.fetch=async(url,opts={})=>{
  if(String(url).includes('render.hacklily.org'))return rendererDown?new Response('unavailable',{status:503}):{webSocket:new Socket()};
  if(String(url).endsWith('/key')){assert.equal(opts.redirect,'manual');if(redirectKey)return new Response(null,{status:302,headers:{Location:'https://other.test'}});assert.equal(opts.headers.Authorization,'Bearer sk-or-v1-TESTKEY');return rejectKey?Response.json({error:{message:'Missing Authentication header'}},{status:401}):Response.json({data:{label:'test'}});}
  if(String(url).endsWith('/models'))return Response.json({data:[{id:'test/model',name:'Test',architecture:{output_modalities:['text']},pricing:{prompt:'0.000001',completion:'0.000002'}}]});
- if(String(url).endsWith('/chat/completions')){assert.equal(opts.redirect,'manual');paid++;requests.push(JSON.parse(opts.body));assert.equal(opts.headers.Authorization,'Bearer sk-or-v1-TESTKEY');return Response.json({choices:[{message:{content:answer},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:80,cost:0.0001}})}
+ if(String(url).endsWith('/chat/completions')){assert.equal(opts.redirect,'manual');paid++;const request=JSON.parse(opts.body);requests.push(request);assert.equal(opts.headers.Authorization,'Bearer sk-or-v1-TESTKEY');const naming=request.max_tokens===1000;if(naming&&namingDown)return Response.json({error:{message:'unavailable'}},{status:503});return Response.json({choices:[{message:{content:naming?JSON.stringify({title:namingAnswers.shift()}):answer},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:80,cost:0.0001}})}
  throw Error('Unexpected outbound destination: '+url);
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.5'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.6'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -45,14 +46,18 @@ const history=(await value('/api/history/'+result.historyId)).entry;assert.equal
 const ws=(await value('/api/workspace')).workspace;assert.equal(ws.techout,answer);assert.equal(ws.compositionModel,'test/model');
 const diag=await (await call('/api/diagnosis?runId='+runId)).text();assert(!diag.includes('sk-or-v1-TESTKEY'));assert.equal(JSON.parse(diag).entries.length,3);assert(diag.includes('durationMs'));assert(diag.includes('MY EDITED SYSTEM'));
 const repeated=await value('/api/run',{method:'POST',data:{...data,runId:'1111222233334444',title:result.title}});
-assert.equal(repeated.title,'Teststück · 2');assert(repeated.answer.includes('title = "Teststück · 2"'));assert.equal(repeated.rawAnswer,answer);
+assert.equal(repeated.title,'Nächtlicher Dialog');assert.equal(repeated.answer,answer.replace('Teststück','Nächtlicher Dialog'));assert.equal(repeated.rawAnswer,answer);
+assert.equal(repeated.titleWarning,'');assert(Math.abs(repeated.usage.cost-.0003)<1e-9);
+const namingDiag=await (await call('/api/diagnosis?runId=1111222233334444')).json();assert(Math.abs(namingDiag.costs.total-.0003)<1e-9);assert.equal(namingDiag.entries.filter(e=>e.operation==='title'&&e.event==='antwort').length,2);
 assert(requests[1].messages[2].content.includes('Teststück'));assert.equal(requests[1].messages[0].content,data.system);assert.equal(requests[1].messages[1].content,data.task);
 assert.equal((await value('/api/history/'+repeated.historyId)).entry.title,repeated.title);
 assert.equal((await value('/api/workspace')).workspace.title,repeated.title);
 assert.equal(await (await call(repeated.downloads[0].url)).text(),repeated.answer);
 assert(repeated.compiled.url.includes(encodeURIComponent(repeated.title)));
-compileError=true;const failed=await value('/api/run',{method:'POST',data:{...data,runId:'fedcba9876543210'}});assert(failed.compiled.error);assert.equal(failed.title,'Teststück · 3');assert.equal((await value('/api/history/'+failed.historyId)).entry.techout,failed.answer);assert.equal(failed.rawAnswer,answer);assert((await value('/api/workspace')).workspace.compiler.includes('line 3'));
+compileError=true;const failed=await value('/api/run',{method:'POST',data:{...data,runId:'fedcba9876543210'}});assert(failed.compiled.error);assert.equal(failed.title,'Dämmerpfade');assert.equal((await value('/api/history/'+failed.historyId)).entry.techout,failed.answer);assert.equal(failed.rawAnswer,answer);assert((await value('/api/workspace')).workspace.compiler.includes('line 3'));
 const compiled=await call('/api/compile-lilypond',{method:'POST',data:{code:answer,runId:'abcdef0123456789'}});assert.equal(compiled.status,422);assert((await compiled.json()).logs.includes('line 3'));
+compileError=false;namingDown=true;
+const namingFailed=await value('/api/run',{method:'POST',data:{...data,runId:'4444555566667777'}});assert(namingFailed.titleWarning.includes('ursprünglichen Titel'));assert.equal(namingFailed.answer,answer);assert(namingFailed.compiled.url);assert.equal((await value('/api/history/'+namingFailed.historyId)).entry.techout,answer);namingDown=false;
 rendererDown=true;const count=paid;assert.equal((await call('/api/run',{method:'POST',data:{...data,runId:'aaaabbbbccccdddd'}})).status,412);assert.equal(paid,count);assert.equal((await call('/api/diagnosis?runId=aaaabbbbccccdddd')).status,200);
 await value('/api/workspace',{method:'POST',data:{workspace:{...ws,key:'DO-NOT-SAVE'}}});assert(!JSON.stringify(await value('/api/workspace')).includes('DO-NOT-SAVE'));
 await value('/api/history/'+result.historyId,{method:'DELETE'});assert.equal((await call('/api/history/'+result.historyId)).status,404);

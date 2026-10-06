@@ -38,6 +38,7 @@ $('compose').onclick=async()=>{
   await compiledResult(d.compiled);await persist();await refreshHistory();
   message(d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
   if(d.finish_reason==='length')message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
+  if(d.titleWarning)message($('status').textContent+'\n'+d.titleWarning);
  }catch(e){message('Fehler: '+e.message);if(e.details&&/Schlüssel|Anmeldung/.test(e.message)){$('connectionDetails').open=true;$('connection').scrollIntoView({behavior:'smooth'});$('keyStatus').textContent=e.message;}queueSave()}finally{setBusy(false);renderResults()}
 };
 $('compile').onclick=async()=>{if(busy)return;const code=$('code').value;if(!code.trim())return message('Bitte LilyPond-Code eingeben oder öffnen.');setBusy(true);state.runId||=crypto.randomUUID().replaceAll('-','');message('LilyPond wird kompiliert …');try{const d=await api('/api/compile-lilypond',{code,title:$('title').value,runId:state.runId});await compiledResult(d);await saveHistory();message('Kompiliert · '+d.pages.length+' Seite(n).')}catch(e){state.compiler=[e.message,e.details?.logs].filter(Boolean).join('\n');invalidate();$('compiler').textContent=state.compiler;message('Compilerfehler: '+e.message);await saveHistory().catch(x=>{$('memoryStatus').textContent=x.message})}finally{setBusy(false);renderResults()}};

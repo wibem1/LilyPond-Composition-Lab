@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.5
+# LilyPond Composition Lab v0.1.6
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -39,3 +39,5 @@ V0.1.3: API-Schlüsselfeld als normales Textfeld mit ausgeschalteter Autokorrekt
 V0.1.4: AudioWorklet mit 17 Stereoausgängen statt einem Ausgang mit 34 Kanälen. Player-Quelltext wird bei jedem Build frisch eingebunden. Regressionstest verwendet die echte SpessaSynth-Bibliothek mit simuliertem Browser-Kanallimit und prüft Initialisierung sowie alle Ausgangsverbindungen. Android-Wiedergabe ist hier nicht am Gerät verifiziert.
 
 V0.1.5: Neue Kompositionen erhalten eine zusätzliche reine Titelanweisung mit bisherigen Namen. Wiederholte Titel bekommen als Rückfall eine freie Nummer; Header, Verlauf und Dateien verwenden denselben Titel. Musikalischer Systemprompt bleibt unverändert. Keine zusätzliche KI-Anfrage.
+
+V0.1.6: Nummerierung als Ersatz für neue Titel entfernt. Bei Wiederholung wird dasselbe Modell gezielt nur nach einem neuen passenden Titel zur fertigen Partitur gefragt (maximal zwei Versuche). Nummerierte Varianten bisheriger Namen werden abgelehnt. Nur die Titelzuweisung im Header wird geändert; die originale KI-Antwort bleibt in der Diagnose. Zusätzliche Aufrufe und Kosten werden protokolliert und mitgerechnet. Bei Ausfall der Titelanfrage bleibt das Stück abspielbar und gespeichert, mit sichtbarem Hinweis auf den ursprünglichen Titel.

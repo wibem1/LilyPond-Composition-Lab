@@ -1,4 +1,4 @@
-const VERSION="0.1.5";
+const VERSION="0.1.6";
 import {PAGE,ASSETS} from "./generated.js";
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
@@ -265,23 +265,49 @@ async function run(req,env){
   answer=typeof answer==='string'?answer:'';
   let code=answer.trim().replace(/^```(?:lilypond|ly)?\s*\n/i,'').replace(/\n```\s*$/,'').trim();
   const proposedTitle=compositionFilename(code.match(/\btitle\s*=\s*"([^"\n]+)"/)?.[1]||'Komposition');
-  const used=new Set(titleContext.map(t=>compositionFilename(t).toLocaleLowerCase('de')));
-  let title=proposedTitle,number=2;
-  while(used.has(title.toLocaleLowerCase('de')))title=proposedTitle.slice(0,90)+' · '+number++;
-  // Keep the visible score, saved source and history aligned if the model repeats a name.
-  code=code.replace(/\btitle\s*=\s*"([^"\n]+)"/,()=>`title = "${title}"`);
-  const usage=response.usage||null,finish=response.choices?.[0]?.finish_reason||null;
+  const titleKey=t=>compositionFilename(t).toLocaleLowerCase('de').replace(/\s*(?:[·–—-]\s*)?\(?\d+\)?\s*$/,'').trim();
+  const usedKeys=new Set(titleContext.map(titleKey));
+  let title=proposedTitle,titleWarning='',titleCost=0;
+  const usage=response.usage?{...response.usage}:null,finish=response.choices?.[0]?.finish_reason||null;
   await log(env,'antwort',runId,{stage:'composition',model,answer,usage,finish_reason:finish,durationMs:Date.now()-started});
-  const downloads=code?[{label:'LilyPond-Datei',url:await saveFile(env,title,'ly',code)}]:[];
+  const downloads=[];
   const base={title:compositionFilename(title),task,system,techout:code,compositionModel:model,format:'lilypond',runId,downloads,costs:{composition:Number(usage?.cost)||0,realisation:0},tokens1:max_tokens};
-  // Persist the original answer BEFORE compilation; compiler failure must never lose it.
+  // Persist the original composition before naming or compiling it.
   const saved=await saveHistory(env,base);
+  if(usedKeys.has(titleKey(title))){
+   const blocked=titleContext.slice(-40);
+   for(let attempt=1;attempt<=2;attempt++){
+    const namingMessages=[{role:'system',content:'Du vergibst ausschließlich einen neuen musikalischen Titel für eine bereits fertige Komposition. Wähle einen eigenständigen, zur Musik passenden Namen. Keine Nummerierung, keine bloße Variante eines bisherigen Titels. Ändere keine Musik. Antworte nur als JSON: {"title":"Dein neuer Titel"}.'},{role:'user',content:JSON.stringify({auftrag:task,lilypond:code,bisherigeTitel:blocked})}];
+    const namingStarted=Date.now();
+    await log(env,'anfrage',runId,{stage:'composition',operation:'title',attempt,model,messages:namingMessages,max_tokens:1000});
+    try{
+     const nr=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages:namingMessages,max_tokens:1000,stream:false,usage:{include:true}})},30000);
+     rejectRedirect(nr);
+     const nd=await nr.json();
+     if(!nr.ok)throw Error('Titelanfrage fehlgeschlagen (HTTP '+nr.status+').');
+     let content=nd.choices?.[0]?.message?.content;
+     if(Array.isArray(content))content=content.filter(x=>x.type==='text').map(x=>x.text).join('\n');
+     titleCost+=Number(nd.usage?.cost)||0;
+     await log(env,'antwort',runId,{stage:'composition',operation:'title',attempt,model,answer:content,usage:nd.usage||null,durationMs:Date.now()-namingStarted});
+     const candidate=JSON.parse(String(content||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')).title;
+     if(typeof candidate!=='string'||!candidate.trim()||candidate.length>100)throw Error('Kein gültiger neuer Titel.');
+     const next=compositionFilename(candidate);
+     if(usedKeys.has(titleKey(next))) {blocked.push(next);throw Error('Die KI hat erneut einen bisherigen Titel vorgeschlagen.');}
+     title=next;titleWarning='';break;
+    }catch(e){titleWarning='Neuer Titel konnte nicht erzeugt werden. Die Komposition wurde unter ihrem ursprünglichen Titel gespeichert.';await log(env,'titelwarnung',runId,{attempt,error:String(e.message).replaceAll(key,'[API-Schlüssel]')});}
+   }
+  }
+  // Only the title assignment changes; the musical source stays intact.
+  if(title!==proposedTitle)code=code.replace(/\btitle\s*=\s*"([^"\n]+)"/,()=>`title = "${title}"`);
+  if(usage)usage.cost=(Number(usage.cost)||0)+titleCost;
+  base.title=title;base.techout=code;base.costs.composition+=titleCost;
+  if(code)downloads.push({label:'LilyPond-Datei',url:await saveFile(env,title,'ly',code)});
   const compiled=code?await compileLilyMidi(env,code,title,runId):{error:'Die KI lieferte keinen LilyPond-Code.'};
   await log(env,'kompilierung',runId,{source:code,...compiled});
   if(compiled.url)downloads.push({label:'MIDI-Datei',url:compiled.url});
   const entry={...base,id:saved.id,downloads,midiUrl:compiled.url||'',pages:compiled.pages||[],compiler:compiled.logs||compiled.error||''};
   await saveHistory(env,entry);await putJson(env,'workspace/current.json',{...entry,historyId:saved.id});
-  return json({runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,finish_reason:finish,compiled,durationMs:Date.now()-started});
+  return json({runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,titleWarning,finish_reason:finish,compiled,durationMs:Date.now()-started});
  }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{error,status:e.status||null,providerError:e.providerError?.replaceAll(key||'\u0000','[API-Schlüssel]')||null,durationMs:Date.now()-started});return json({error,runId},e.status===401?401:502)}
 }
 export default {async fetch(request,env,ctx){try{return await handle(request,env)}catch(e){return json({error:e.name==='AbortError'?'Zeitüberschreitung beim Onlinedienst.':String(e.message||e)},e.status||500)}}};
