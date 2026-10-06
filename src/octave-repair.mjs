@@ -31,6 +31,7 @@ export function octaveTokens(source){
 }
 export function applyOctaveEdits(original,response){
  const parsed=JSON.parse(String(response).trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));
+ if(parsed.octaves)return applyAbsoluteOctaves(original,parsed.octaves);
  if(!Array.isArray(parsed.edits)||!parsed.edits.length||parsed.edits.length>1024)throw Error('Keine gültigen Oktavänderungen.');
  const tokens=octaveTokens(original);
  const edits=parsed.edits.map(e=>{
@@ -48,4 +49,58 @@ export function applyOctaveEdits(original,response){
  for(const e of edits){if(e.end>previous)throw Error('Änderungen überlappen.');candidate=candidate.slice(0,e.start)+e.to+candidate.slice(e.end);previous=e.start;}
  if(!octaveOnlyChange(original,candidate))throw Error('Nicht ausschließlich Oktavzeichen geändert.');
  return candidate;
+}
+
+const degree=t=>'cdefgab'.indexOf(t[0]);
+const marks=t=>(t.match(/'/g)||[]).length-(t.match(/,/g)||[]).length;
+const nearest=(reference,d)=>reference+((d-reference%7+10)%7)-3;
+function closingBrace(source,start){let depth=0;for(let i=start;i<source.length;i++){if(source[i]==='{')depth++;if(source[i]==='}'&&!--depth)return i;}return -1;}
+// Deliberately bounded: complex simultaneous/nested music stays with the legacy
+// repair path. A recognized sequential relative block is encoded mechanically.
+export function relativeOctavePlan(source){
+ if(/\\include\b|\\language\s+"(?!nederlands")/.test(source))return null;
+ let masked=String(source).replace(/"(?:\\.|[^"\\])*"|%\{[\s\S]*?%\}|%[^\n]*/g,m=>' '.repeat(m.length));
+ const blocks=[];let lastEnd=-1;
+ for(const match of masked.matchAll(/\\relative\s+((?:es|as|[a-g](?:isis|eses|is|es)?)[',]*)\s*\{/g)){
+  const start=match.index+match[0].length-1,end=closingBrace(masked,start);if(end<0||start<lastEnd)return null;
+  const body=masked.slice(start,end);
+  if(/\\(?:relative|absolute|fixed|transpose|repeat|alternative|chordmode|drummode|octaveCheck|language|grace|acciaccatura|appoggiatura|afterGrace)\b|<<|>>|\\\\/.test(body))return null;
+  blocks.push({start,end,anchor:degree(match[1])+(3+marks(match[1]))*7});lastEnd=end;
+ }
+ if(!blocks.length)return null;
+ // Text annotations and key signatures are not sounding notes.
+ for(const match of [...masked.matchAll(/\\markup\s*\{/g)].reverse()){
+  const start=match.index+match[0].length-1,end=closingBrace(masked,start);if(end<0)return null;
+  masked=masked.slice(0,match.index)+' '.repeat(end+1-match.index)+masked.slice(end+1);
+ }
+ masked=masked.replace(/\\key\s+(?:es|as|[a-g](?:isis|eses|is|es)?)[',]*/g,m=>' '.repeat(m.length));
+ const plan=[];
+ for(let block=0;block<blocks.length;block++){
+  const b=blocks[block];let reference=b.anchor,first=null,chord=false,cursor=b.start;
+  for(const token of octaveTokens(masked).filter(t=>t.start>b.start&&t.end<b.end)){
+   for(const bracket of masked.slice(cursor,token.start).matchAll(/(?<!\\)[<>]/g)){
+    if(bracket[0]==='<'){if(chord)return null;chord=true;first=null;}
+    else {if(!chord||first===null)return null;reference=first;chord=false;first=null;}
+   }
+   const pitch=nearest(reference,degree(token.token))+marks(token.token)*7;
+   plan.push({...token,id:plan.length,block,anchor:b.anchor,chordFirst:chord&&first===null,chord,octave:Math.floor(pitch/7)});
+   if(chord&&first===null)first=pitch;reference=pitch;cursor=token.end;
+  }
+ }
+ return plan.length?plan:null;
+}
+export function applyAbsoluteOctaves(source,octaves){
+ const plan=relativeOctavePlan(source);
+ if(plan&&Array.isArray(octaves)&&octaves.length!==plan.length)throw Error(`Genau ${plan.length} Oktavnummern erforderlich, ${octaves.length} erhalten.`);
+ if(!plan||!Array.isArray(octaves)||octaves.length!==plan.length||octaves.some(o=>!Number.isInteger(o)||o<0||o>8))throw Error('Keine vollständigen gültigen absoluten Oktavlagen.');
+ let block=-1,reference=0,first=null,wasChord=false;const edits=[];
+ for(let i=0;i<plan.length;i++){
+  const t=plan[i];if(t.block!==block){block=t.block;reference=t.anchor;first=null;wasChord=false;}
+  if(wasChord&&(!t.chord||t.chordFirst)){reference=first;first=null;}
+  const target=octaves[i]*7+degree(t.token),offset=(target-nearest(reference,degree(t.token)))/7;
+  edits.push({...t,to:t.token.replace(/[',]+$/,'')+(offset<0?',':"'").repeat(Math.abs(offset))});
+  if(t.chordFirst)first=target;reference=target;wasChord=t.chord;
+ }
+ let result=source;for(const e of edits.reverse())result=result.slice(0,e.start)+e.to+result.slice(e.end);
+ if(!octaveOnlyChange(source,result))throw Error('Nicht ausschließlich Oktavzeichen geändert.');return result;
 }

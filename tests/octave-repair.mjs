@@ -34,3 +34,16 @@ const indexedActual=JSON.parse(await readFile(new URL('./fixtures/gemini-indexed
 assert.equal(applyOctaveEdits(indexedActual.source,indexedActual.response),indexedActual.corrected);
 assert(octaveOnlyChange(indexedActual.source,indexedActual.corrected));
 console.log('PASS: real Gemini numbered repair for c43b07ef; exact accepted source reproduced. Live MIDI: 140 notes, E1–C6, duration 31.304304 s.');
+const {relativeOctavePlan,applyAbsoluteOctaves}=await import('../src/octave-repair.mjs');
+const chordSource="\\relative c' { \\key c \\major c4 <g' c e> d f, <c' e g> c }";
+assert.deepEqual(relativeOctavePlan(chordSource).map(t=>t.octave),[4,4,5,5,4,3,4,4,4,4]);
+const actualTarget=relativeOctavePlan(indexedActual.corrected).map(t=>t.octave);
+assert.equal(applyAbsoluteOctaves(indexedActual.source,actualTarget),indexedActual.corrected);
+for(const source of ["\\relative c' { << c4 e4 >> }","\\relative c' { \\transpose c d { c4 } }","\\relative c' { \\relative c' { c4 } }"] )assert.equal(relativeOctavePlan(source),null);
+assert.throws(()=>applyAbsoluteOctaves(chordSource,[4]));
+assert.throws(()=>applyAbsoluteOctaves(chordSource,Array(10).fill(9)));
+console.log('PASS: absolute targets mechanically reproduce the real accepted repair; chord first-note references, key exclusion, unsupported syntax and target counts verified.');
+const absoluteActual=JSON.parse(await readFile(new URL('./fixtures/gemini-absolute-octaves.json',import.meta.url),'utf8'));
+assert.equal(applyOctaveEdits(absoluteActual.source,absoluteActual.response),absoluteActual.corrected);
+assert(octaveOnlyChange(absoluteActual.source,absoluteActual.corrected));
+console.log('PASS: real absolute-octave Gemini response on 24-bar piece exactly reproduced; live MIDI 256 notes C1–D6.');
