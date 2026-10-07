@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.30
+# LilyPond Composition Lab v0.1.31
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -148,3 +148,7 @@ Neue vollständige Kompositionen enthalten das Modell aus der API-Antwort (ersat
 Die Diagnose e7bdcb78 zeigte 27.323 Denktokens trotz angefordertem 2.048-Token-Denkbudget. Für `anthropic/claude-sonnet-5.5` (einschließlich datierter/Router-Varianten) sendet „Kurz“ jetzt `reasoning.effort=low`, den dokumentierten Regler für adaptives Denken, statt des alten Tokenbudgets. „Modellvorgabe“ sendet weiterhin keine Denksteuerung. Andere Modelle behalten ihre bisherige Behandlung. Notenausgabebudget, Kompositionsauftrag und Systemprompt bleiben unverändert. Die Hilfe beschreibt die modellabhängige Steuerung; die Diagnose protokolliert den tatsächlich gesendeten Parameter. Simulierte Worker-Tests prüfen beide Sonnet-Einstellungen, unveränderte Prompts/Budgets und gespeicherte Auswahl. Es wurde kein kostenpflichtiger Vergleichslauf ausgeführt; Einsparung und musikalische Qualität müssen am nächsten echten Ergebnis verglichen werden.
 
 Grundlagen: https://platform.claude.com/docs/en/build-with-claude/effort und https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
+
+### v0.1.31 – ausgewogener Denkaufwand
+
+Dritte Auswahl „Ausgewogen“ sendet `reasoning.effort=medium`. „Kurz“ und „Modellvorgabe“ behalten ihre Steuerung aus v0.1.30, die voreingestellte Auswahl bleibt „Kurz“. Die mittlere Einstellung wird beim Komponieren, manuellen Speichern, Verlauf-Laden und Wiederherstellen des Arbeitsstands erhalten. Auftrag und Systemprompt sowie das gesamte Tokenbudget bleiben unverändert. Tests prüfen alle drei Sonnet-Einstellungen, den tatsächlichen Anfrageparameter in der Diagnose und das Speichern beider Speicherwege. Mittlere Denkstufe ist keine feste Zeit- oder Kostenzusage; musikalische Qualität und Einsparung sind am echten Ergebnis zu vergleichen.

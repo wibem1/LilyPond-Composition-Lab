@@ -1,5 +1,5 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.30";
+const VERSION="0.1.31";
 import {compositionAttribution} from '../src/composition-attribution.mjs';
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
@@ -134,7 +134,7 @@ async function saveFile(env,title,ext,bytes){
 }
 async function saveHistory(env,b){
  const id=historyId(b.id)||randomUUID().replaceAll('-',''),old=await getJson(env,'history/'+id+'.json')||{};
- const entry={id,createdAt:old.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),actualCompositionModel:clean(b.actualCompositionModel??old.actualCompositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:compositionCosts(b.costs===undefined?old.costs:b.costs),tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compositionReasoning:b.compositionReasoning==='short'?'short':'default',compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
+ const entry={id,createdAt:old.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),actualCompositionModel:clean(b.actualCompositionModel??old.actualCompositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:compositionCosts(b.costs===undefined?old.costs:b.costs),tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compositionReasoning:['short','balanced'].includes(b.compositionReasoning)?b.compositionReasoning:'default',compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
  await env.BUCKET.put('history/'+id+'.json',JSON.stringify(entry),{httpMetadata:{contentType:'application/json'},customMetadata:{summary:JSON.stringify(historyPublic(entry))}});return historyPublic(entry);
 }
 function validDownloads(d){return Array.isArray(d)?d.filter(x=>typeof x?.url==='string'&&x.url.startsWith('/download/')&&typeof x.label==='string').slice(0,8).map(x=>({label:x.label.slice(0,100),url:x.url.slice(0,500)})):[]}
@@ -346,7 +346,7 @@ async function handle(req,env,ctx){
  if(req.method==='GET'&&p==='/api/workspace')return json({workspace:await getJson(env,'workspace/current.json')});
  if(req.method==='POST'&&p==='/api/workspace'){
   const b=await body(req),w=b.workspace;if(!w||typeof w!=='object'||Array.isArray(w))return json({error:'Ungültiger Arbeitsstand'},400);
-  const entry={title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compositionReasoning:w.compositionReasoning==='short'?'short':w.compositionReasoning==='default'?'default':'short',compiler:clean(w.compiler),pages:validDownloads(w.pages),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||64000),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:compositionCosts(w.costs),downloads:validDownloads(w.downloads),midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};await putJson(env,'workspace/current.json',entry);return json({saved:true});
+  const entry={title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compositionReasoning:['short','balanced','default'].includes(w.compositionReasoning)?w.compositionReasoning:'short',compiler:clean(w.compiler),pages:validDownloads(w.pages),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||64000),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:compositionCosts(w.costs),downloads:validDownloads(w.downloads),midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};await putJson(env,'workspace/current.json',entry);return json({saved:true});
  }
  if(req.method==='GET'&&p==='/api/diagnosis'){
   const runId=safe(url.searchParams.get('runId')||''),session=await readRunSession(runId,runIO),objects=await listAll(env,'logs/'+runId+'/');const entries=await Promise.all(objects.map(o=>getJson(env,o.key)));entries.sort((a,b)=>a.date.localeCompare(b.date));if(!entries.length)return json({error:'Kein Protokoll gefunden.'},404);
@@ -372,11 +372,11 @@ async function run(req,env){
   const requestedTokens=parseInt(b.maxTokens);
   const max_tokens=Math.min(64000,Math.max(500,!requestedTokens||requestedTokens===8000?64000:requestedTokens));
   const messages=[{role:'system',content:system},{role:'user',content:task}];
-  const compositionReasoning=b.compositionReasoning==='short'?'short':'default';
+  const compositionReasoning=['short','balanced'].includes(b.compositionReasoning)?b.compositionReasoning:'default';
   // Sonnet 5.5 uses adaptive thinking: steer effort instead of a legacy token budget.
   const adaptiveSonnet=/^anthropic\/claude-sonnet-5\.5(?:$|[-:])/.test(model);
   if(compositionReasoning==='short'&&!adaptiveSonnet&&max_tokens<=1024)throw Error('Für kurzes Denken bitte ein Tokenbudget von mindestens 1025 wählen. Kein KI-Aufruf gestartet.');
-  const reasoning=compositionReasoning==='short'?(adaptiveSonnet?{effort:'low'}:{max_tokens:Math.min(2048,max_tokens-1)}):null;
+  const reasoning=compositionReasoning==='balanced'?{effort:'medium'}:compositionReasoning==='short'?(adaptiveSonnet?{effort:'low'}:{max_tokens:Math.min(2048,max_tokens-1)}):null;
   const payload={model,messages,max_tokens,stream:false,usage:{include:true},...(reasoning?{reasoning}:{})};
   await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:reasoning||'provider_default'});
   const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify(payload)});

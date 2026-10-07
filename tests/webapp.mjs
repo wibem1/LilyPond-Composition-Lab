@@ -32,7 +32,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.30'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.31'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -209,11 +209,11 @@ console.log('PASS: API-reported model is stored in source, composer, history, wo
 
 // Sonnet 5.5 must receive adaptive effort, not the ineffective legacy budget.
 namingDown=true;
-for(const [selection,runId] of [['short','abcd1111abcd3333'],['default','abcd1111abcd4444']]){
+for(const [selection,runId] of [['short','abcd1111abcd3333'],['balanced','abcd1111abcd5555'],['default','abcd1111abcd4444']]){
  const at=requests.length;
  const sonnet=await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',model:'anthropic/claude-sonnet-5.5',compositionReasoning:selection,runId}});
  const request=requests[at];
- if(selection==='short')assert.deepEqual(request.reasoning,{effort:'low'});
+ if(selection!=='default')assert.deepEqual(request.reasoning,{effort:selection==='short'?'low':'medium'});
  else assert(!('reasoning' in request));
  assert.equal(request.max_tokens,24000);
  assert.deepEqual(request.messages,[{role:'system',content:data.system},{role:'user',content:data.task}]);
@@ -221,7 +221,15 @@ for(const [selection,runId] of [['short','abcd1111abcd3333'],['default','abcd111
  assert.equal((await value('/api/workspace')).workspace.compositionReasoning,selection);
  const diag=await value('/api/diagnosis?runId='+runId);
  const logged=diag.entries.find(e=>e.event==='anfrage'&&!e.operation);
- assert.deepEqual(logged.reasoning_requested,selection==='short'?{effort:'low'}:'provider_default');
+ assert.deepEqual(logged.reasoning_requested,selection==='default'?'provider_default':{effort:selection==='short'?'low':'medium'});
 }
 namingDown=false;
 console.log('PASS: Sonnet 5.5 short uses low effort; default omits reasoning control; prompts, total budget, saved choices and diagnostic request match.');
+
+// Manual edits/saves must retain the new choice, as must workspace restoration.
+const balancedSaved=(await value('/api/history',{method:'POST',data:{title:'Balanced save',techout:answer,format:'lilypond',compositionModel:'anthropic/claude-sonnet-5.5',compositionReasoning:'balanced'}})).entry;
+assert.equal((await value('/api/history/'+balancedSaved.id)).entry.compositionReasoning,'balanced');
+await value('/api/workspace',{method:'POST',data:{workspace:{...ws,compositionReasoning:'balanced'}}});
+assert.equal((await value('/api/workspace')).workspace.compositionReasoning,'balanced');
+assert(html.includes('<option value="balanced">Ausgewogen'));
+console.log('PASS: balanced sends medium effort and survives composition history, manual history save/reload and workspace save/reload.');
