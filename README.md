@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.17
+# LilyPond Composition Lab v0.1.18
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -69,3 +69,5 @@ Echter Test der absoluten Zieloktaven auf 17d787: komplette Reparatur in 26,8 Se
 V0.1.16: Beim erfolgreichen Laden eines eigenen Soundfonts wird die Standardbank aus dem aktiven Synthesizer entfernt. Ein exakter GM-Treffer des Standards kann so keine eigenen Presets mit anderen Bank-/Programmnummern verdecken. Der Standard-Button lädt die Standardbank wieder; ungültige Dateien erhalten den bisherigen Klang, Ladefehler bleiben sichtbar. Während Dateieinlesen/Soundfont-Laden ist Start gesperrt, damit kein paralleler Standard-Ladevorgang ausgelöst wird.
 
 V0.1.17 (07.10.2026): Erweiterte Ausdruckswiedergabe mit LilyPonds articulate.ly. Gedruckter score und separate MIDI-Fassung werden im selben Compilerlauf erzeugt; Originalcode und Notenbild bleiben erhalten. Bögen, Tenuto, Staccato, Akzente und Verzierungen werden im MIDI umgesetzt. Unmarkierte Noten werden nur um 1/16 gekürzt, um eine übermäßig abgesetzte Wiedergabe zu vermeiden. Bekannte ritardando/rallentando/accelerando/a-tempo-Textangaben werden auch in Markup erkannt. Ritardando/Accelerando wirken gemäß articulate als Tempowechsel, nicht als kontinuierliche Rampe; frei formulierte Ausdruckstexte werden nicht interpretiert. Dynamik bleibt LilyPonds notierter Dynamikverlauf, keine zufällige Humanisierung oder zusätzliche KI-Aufrufe. Eigene articulate-Setups werden respektiert. Bei fehlgeschlagener Erweiterung wird die normale MIDI-Fassung mit sichtbarer Warnung verwendet; Diagnose protokolliert Modus und Fehler. Bestehende MIDI-Dateien erhalten die Erweiterung durch „Neu kompilieren“.
+
+V0.1.18 (07.10.2026): Allgemeine KI-Vorgaben verlangen musikalisch passende Dynamikverläufe, Artikulation, Phrasierungsbögen, instrumentgerechte Pedalangaben und Tempoveränderungen direkt in der Notation. Verzierungen bleiben eine musikalische Entscheidung. Unveränderte frühere Standardvorgaben werden beim Laden und serverseitig ergänzt; selbst bearbeitete Vorgaben bleiben erhalten. Kein zusätzlicher KI-Aufruf und keine Änderung vorhandener Kompositionen.

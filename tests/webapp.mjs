@@ -31,7 +31,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.17'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.18'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -63,9 +63,10 @@ compileError=false;namingDown=true;
 const defaultIndex=requests.length;
 const namingFailed=await value('/api/run',{method:'POST',data:{...data,system:'',runId:'4444555566667777'}});assert(namingFailed.titleWarning.includes('ursprünglichen Titel'));assert.equal(namingFailed.answer,answer);assert(namingFailed.compiled.url);assert.equal((await value('/api/history/'+namingFailed.historyId)).entry.techout,answer);namingDown=false;
 const originalPrompt=requests[defaultIndex].messages[0].content;
-assert(originalPrompt.endsWith('Es gibt keinen vorgeschalteten Entwurf.'));assert(!originalPrompt.includes('Technische Notation'));
+assert(originalPrompt.includes('Es gibt keinen vorgeschalteten Entwurf.'));assert(originalPrompt.includes('Pedalangaben'));assert(originalPrompt.includes('Verzierungen, wenn sie musikalisch passen')); assert(!originalPrompt.includes('Technische Notation'));
 // Restore the unchanged technical standard stored by v0.1.7/8, retaining edited prompts.
-const technicalPrompt=originalPrompt+' Technische Notation: Verwende absolute Tonhöhen mit ausdrücklich angegebenen Oktaven (ohne \\relative). Prüfe die tatsächlichen Oktavlagen; Verwende für jedes Instrument dessen spielbaren klingenden Tonumfang; für Klavier A0 bis C8. Diese Notationsregel macht keine Vorgaben zur musikalischen Gestaltung.';
+const legacyPrompt=originalPrompt.split(' Notiere die musikalisch')[0];
+const technicalPrompt=legacyPrompt+' Technische Notation: Verwende absolute Tonhöhen mit ausdrücklich angegebenen Oktaven (ohne \\relative). Prüfe die tatsächlichen Oktavlagen; Verwende für jedes Instrument dessen spielbaren klingenden Tonumfang; für Klavier A0 bis C8. Diese Notationsregel macht keine Vorgaben zur musikalischen Gestaltung.';
 const migrationIndex=requests.length;namingDown=true;
 await value('/api/run',{method:'POST',data:{...data,system:technicalPrompt,runId:'5555666677778888'}});
 assert.equal(requests[migrationIndex].messages[0].content,originalPrompt);assert.equal((await value('/api/workspace')).workspace.system,originalPrompt);namingDown=false;
@@ -117,3 +118,7 @@ expressionError=true;
 const expressionFallback=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Expression fallback',runId:'abcdef1234567891'}});assert.equal(expressionFallback.expressionPlayback.mode,'fallback');assert(expressionFallback.url);assert(expressionFallback.warning.includes('normale MIDI'));assert(expressionFallback.expressionPlayback.error.includes('expression failed'));
 expressionError=false;
 console.log('PASS: Worker records enhanced playback and safely returns standard MIDI with a visible warning when the expression compiler fails.');
+
+const legacyIndex=requests.length;namingDown=true;
+await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',system:legacyPrompt,runId:'abcd1234abcd4321'}});assert.equal(requests[legacyIndex].messages[0].content,originalPrompt);namingDown=false;
+console.log('PASS: expression notation in default prompt; both older default prompts upgraded; edited custom prompt retained.');
