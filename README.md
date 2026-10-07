@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.21
+# LilyPond Composition Lab v0.1.22
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -94,3 +94,16 @@ Die zusätzliche MIDI-Fassung erzeugt Triller mit einer Zielrate von ungefähr a
 Alle kostenpflichtigen KI-Korrekturaufrufe für Oktavlagen sind entfernt. Der separate Korrekturbutton entfällt. Nach einer Komposition und bei jedem Kompilieren wird das MIDI geprüft und bei Bereichs- oder Registerverletzungen eine rein rechnerische Korrektur versucht. Unterstützt werden auflösbare sequenzielle relative Blöcke (mit/ohne Startton) und absolute Notation. Die App bevorzugt eine einheitliche Oktavverschiebung einer Stimme, die alle Intervalle erhält. Bei zu großer Drift versetzt sie nur Töne außerhalb des Bereichs in eine spielbare Oktave nahe der vorausgehenden korrigierten Note. Eindeutig erkennbare absolute Schreibweise in relativen Klavierblöcken wird weiterhin gesondert neu codiert. Instrumente aus einfachen benannten Staff-Stimmen werden mit den tatsächlich kompilierten Instrumentenprofilen abgeglichen; bei uneindeutiger Zuordnung, unbekanntem Tonumfang oder komplexen nicht unterstützten Konstruktionen bleibt das Original mit konkreter Fehlermeldung erhalten. Es findet kein KI-Fallback statt.
 
 Eine rechnerische Bereichskorrektur belegt Spielbarkeit der Tonhöhen, nicht die musikalisch beabsichtigte Oktave. Notennamen, Rhythmus, Tempo und Ausdruckszeichen werden nicht verändert. Jede Kandidatenfassung wird erneut kompiliert und nur mit bestandener MIDI- und Registerprüfung übernommen. Diagnose protokolliert Methode, Änderungen, Laufzeit, Annahme/Ablehnung und `paidCalls: 0`. Die bestehende Reparatur-API bleibt für Kompatibilität verfügbar, benötigt aber weder Modell noch Schlüssel. Bereits entstandene historische Kosten werden korrekt weiter angezeigt; neue Oktavprüfungen/-korrekturen verursachen keine KI-Kosten.
+
+
+## Version 0.1.22 · 07.10.2026
+
+Die Trillerwiedergabe ersetzt die feste Rate aus 0.1.21 durch eine tempoabhängige Interpretation: Zielwert 4–10 Anschläge pro Sekunde, gerundete Tonanzahl innerhalb der notierten Dauer. Lange Triller beginnen mit längeren Tönen, beschleunigen sanft und schließen auf dem Hauptton. Kurze Triller können wegen der notwendigen drei Töne schneller ausfallen. Kein zusätzliches Tempoereignis wird erzeugt. Dies ist eine Ausführungsentscheidung der App, keine allgemeingültige historische Regel.
+
+Standard ist der Hauptnotenanfang. `\labTrillFromUpper { c'2\trill }` ermöglicht den historischen Nebennotenanfang, `\labTrillFromMain` den ausdrücklichen Hauptnotenanfang. Ein vorausgehender Vorschlag auf der Hauptnote lässt den Wechsel mit der oberen Note beginnen; ein oberer Vorschlag wird durch den Hauptton fortgesetzt. Eine automatische Stilerkennung findet nicht statt.
+
+Die Nebennote folgt der Tonart; `\pitchedTrill ... \startTrillSpan <Ton>` hat Vorrang und bleibt auch während des Trillerspanners erhalten. Tonart- und Trillerspannerzustände werden pro gleichzeitiger Stimme getrennt. Bei einem Akkord trillert nur der höchste Ton, die übrigen werden gehalten. Ein ausgeschriebener `\afterGrace`-Nachschlag wird mit moderater Dauer berücksichtigt; ein nicht notierter Nachschlag wird nicht erfunden. Vorzeichen allein als grafisches Markup werden nicht als klingender Trillerton interpretiert; dafür muss der Ton ausdrücklich angegeben sein.
+
+Das gedruckte Notenbild bleibt erhalten. MIDI-Dateien im Verlauf werden nicht rückwirkend geändert; einmal **Neu kompilieren** übernimmt die neue Wiedergabe ohne KI-Kosten. Eigene `articulate.ly`-Konfigurationen bleiben maßgeblich. Die Diagnose nennt `musical-v2` und die Zielwerte. Reale LilyPond-2.26-MIDI-Tests prüfen Haupt-/Nebennotenanfang, Tonarten, expliziten chromatischen Trillerton, gehaltene Akkordtöne, Vorschläge, Nachschlag, kurze Triller, Trillerspanner, unabhängige Stimmen sowie unveränderte Tempo- und Taktlängen.
+
+Grundlagen: [Music and the Bassoon, University of Texas, Unit 44](https://www.musicandthebassoon.org/50-units/unit-44), [MEI Trill](https://music-encoding.org/guidelines/v5/elements/trill.html), [Henle: C. P. E. Bach, Hinweise zur Aufführungspraxis](https://www.henle.de/media/ab/53/5a/1697725708/0555-1697725708-sync.pdf).

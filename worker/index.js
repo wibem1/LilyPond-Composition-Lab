@@ -1,4 +1,4 @@
-const VERSION="0.1.21";
+const VERSION="0.1.22";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
@@ -203,7 +203,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   }
   else warning='LilyPond erzeugte keine MIDI-Datei.';
   if(performance.mode==='fallback')warning=[warning,'Erweiterte Ausdruckswiedergabe fehlgeschlagen; normale MIDI-Wiedergabe verwendet.'].filter(Boolean).join('\n');
-  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,trillNotesPerSecond:performance.mode==='articulate'?8:null,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
+  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,trillPolicy:performance.mode==='articulate'?'musical-v2':null,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
 async function repairOctaves(env,code,title,runId,compiled,task=''){
@@ -332,7 +332,7 @@ async function handle(req,env,ctx){
  if(req.method==='GET'&&p==='/api/diagnosis'){
   const runId=safe(url.searchParams.get('runId')||''),session=await readRunSession(runId,runIO),objects=await listAll(env,'logs/'+runId+'/');const entries=await Promise.all(objects.map(o=>getJson(env,o.key)));entries.sort((a,b)=>a.date.localeCompare(b.date));if(!entries.length)return json({error:'Kein Protokoll gefunden.'},404);
   const costs={composition:0,realisation:0,total:0};for(const e of entries){const c=Number(e.usage?.cost);if(Number.isFinite(c)){if(e.stage==='composition')costs.composition+=c;if(e.stage==='realisation')costs.realisation+=c;costs.total+=c}}
-  return text(JSON.stringify({app:'LilyPond Composition Lab',version:VERSION,createdAt:new Date().toISOString(),runId,costs,playback:{soundfont:(await getJson(env,'settings/soundfont.json'))?.name||'TimGM6mb',trillDefaultNotesPerSecond:8,existingMidiRequiresRecompile:true},runStatus:session?{status:session.status,phase:session.phase,startedAt:session.startedAt,updatedAt:session.updatedAt}:null,entries},null,2),'application/json; charset=utf-8',{'Content-Disposition':`attachment; filename="Diagnose-${runId}.json"`});
+  return text(JSON.stringify({app:'LilyPond Composition Lab',version:VERSION,createdAt:new Date().toISOString(),runId,costs,playback:{soundfont:(await getJson(env,'settings/soundfont.json'))?.name||'TimGM6mb',trillPolicy:'musical-v2',trillTargetNotesPerSecond:{min:4,max:10},trillStart:'principal; explicit upper-start override',existingMidiRequiresRecompile:true},runStatus:session?{status:session.status,phase:session.phase,startedAt:session.startedAt,updatedAt:session.updatedAt}:null,entries},null,2),'application/json; charset=utf-8',{'Content-Disposition':`attachment; filename="Diagnose-${runId}.json"`});
  }
  if(req.method==='POST'&&p==='/api/run')return run(req,env);
  return json({error:'Nicht gefunden'},404);
