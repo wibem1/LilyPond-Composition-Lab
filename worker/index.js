@@ -1,5 +1,5 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.23";
+const VERSION="0.1.24";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
@@ -215,11 +215,11 @@ async function repairOctaves(env,code,title,runId,compiled,task=''){
   checked=await compileLilyMidi(env,local.code,title,runId,task);
   await log(env,'korrekturpruefung',runId,{operation:'octave-repair',method:local.method,paidCalls:0,notes:local.notes,changes:local.changes??null,source:local.code,...checked});
   if(checked.error||!checked.url||checked.rangeCheck?.status!=='passed'||checked.registerCheck?.status==='warning')throw Error(checked.error||checked.warning||'MIDI-Prüfung nicht bestanden.');
-  checked.repair='Oktavlagen rechnerisch korrigiert und MIDI erneut geprüft. Keine KI-Aufrufe, keine KI-Kosten.';
+  checked.repair='Oktavlagen quellenbezogen korrigiert und MIDI erneut geprüft. Keine KI-Aufrufe, keine KI-Kosten.';
   await log(env,'korrektur',runId,{operation:'octave-repair',method:local.method,accepted:true,paidCalls:0,durationMs:Date.now()-started});
   return {code:local.code,compiled:checked,cost:0};
  }catch(e){error=e.message;}
- await log(env,'korrektur',runId,{operation:'octave-repair',method:local?.method||'mechanical-instrument-range',accepted:false,paidCalls:0,error,durationMs:Date.now()-started});
+ await log(env,'korrektur',runId,{operation:'octave-repair',method:local?.method||'source-octave-repair',accepted:false,paidCalls:0,error,durationMs:Date.now()-started});
  return {code,compiled:{...compiled,repairFailed:true,warning:[compiled.warning,error,'Original erhalten. Kein KI-Korrekturaufruf gestartet.'].filter(Boolean).join('\n')},cost:0};
 }
 
