@@ -120,13 +120,13 @@ const mozartProfiles=[
  {status:'checked',program:0,channel:1,low:21,high:108}
 ];
 const driftFix=automaticOctaveRepair(mozartDrift,mozartProfiles);
-assert.equal(driftFix.method,'relative-marker-drift');
+assert.equal(driftFix.method,'relative-measure-drift');
 assert(octaveOnlyChange(mozartDrift,driftFix.code));
 const repairedLeft=relativeOctavePlan(driftFix.code).filter(t=>t.block===1);
 const repairedKeys=repairedLeft.map(t=>midiKeyForTest(t.token,t.octave));
 assert(repairedKeys.every(k=>k>=21&&k<=108));
 assert(Math.min(...repairedKeys)>=33,'repair should restore the bass pattern, not merely scrape along A0');
-assert(driftFix.code.includes('bes4 f d bes |'));
+assert(driftFix.code.includes("bes4 f' d bes |"));
 assert(!driftFix.code.includes("bes,4 f' d bes |"));
-console.log('PASS: regression 0d1db3d2: cumulative relative-octave drift is repaired at its LilyPond source markers; no individual MIDI-note clamping.');
+console.log('PASS: regression 0d1db3d2: cumulative relative-octave drift is repaired by octave-shifting complete measures in the LilyPond source; no individual MIDI-note clamping.');
 
