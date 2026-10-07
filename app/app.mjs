@@ -16,7 +16,18 @@ function setBusy(v){busy=v;for(const id of ['compose','compile','new','import','
 function message(s){$('status').textContent=s;}
 const runClient=new RunClient({onprogress:message});
 async function restoreSoundFont(){const revision=fontRevision;try{const font=await api('/api/soundfont');if(revision===fontRevision){selectedFont=font;$('playerStatus').textContent='Klang gespeichert: '+font.name;}return font;}catch(e){$('playerStatus').textContent='Gespeicherter Klang konnte nicht abgerufen werden: '+e.message;return null;}}
-async function saveSoundFont(buffer,name){const r=await fetch('/api/soundfont',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-SoundFont-Name':encodeURIComponent(name)},body:buffer});const d=await r.json();if(!r.ok)throw Error(d.error||'SoundFont konnte nicht gespeichert werden.');selectedFont=d;return d;}
+async function saveSoundFont(buffer,name){
+ const upload=await api('/api/soundfont/upload',{name,bytes:buffer.byteLength});
+ const path='/api/soundfont/upload?id='+encodeURIComponent(upload.id);
+ try{
+  for(let at=0,part=1;at<buffer.byteLength;at+=upload.partBytes,part++){
+   const r=await fetch(path+'&part='+part,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body:buffer.slice(at,at+upload.partBytes)});
+   const d=await r.json();if(!r.ok)throw Error(d.error||'SoundFont-Teil konnte nicht gespeichert werden.');
+   $('playerStatus').textContent='SoundFont speichern: '+Math.round(d.received/d.bytes*100)+' % · '+name;
+  }
+  const d=await api(path,{});selectedFont=d;return d;
+ }catch(e){await fetch(path,{method:'DELETE'}).catch(()=>{});throw e;}
+}
 
 function invalidate(){player.stop();ready=false;state.midiUrl='';state.pages=[];state.downloads=[];renderResults();$('scoreStatus').textContent='Code geändert. Bitte neu kompilieren.';queueSave();}
 function renderResults(){

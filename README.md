@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.26
+# LilyPond Composition Lab v0.1.27
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -128,3 +128,9 @@ Die frühere Einzelton-Korrektur bei stark entgleister relativer Notation ist en
 ### v0.1.26 – Soundfonts ohne 64-MB-Grenze
 
 Die feste 64-MB-Sperre ist sowohl beim Auswählen als auch beim Speichern entfernt. Die vollständige SF2-Struktur wird weiterhin geprüft; ungültige Dateien ersetzen keinen gespeicherten Klang. Regressionstest: eine gültige RIFF/SF2-Datei über 64 MiB wird mit Content-Length gespeichert und unverändert zurückgelesen. Praktische Grenzen ergeben sich weiterhin aus Arbeitsspeicher und Hosting, nicht aus einer festen Dateigrenze in der App.
+
+### v0.1.27 – große Soundfonts speicherschonend hochladen
+
+Die Oberfläche überträgt SF2-Dateien in aufeinanderfolgenden 8-MiB-Teilen über die native R2-Multipart-API und zeigt den Fortschritt. Der Server hält nur einen Teil im Speicher; RIFF/SF2-Header werden über Teilgrenzen hinweg geprüft. Erst nach vollständiger Prüfung und Abschluss wird der gespeicherte Klang ersetzt. Fehler und abgebrochene Uploads erhalten die bisherige Auswahl. Der Player lädt den Soundfont weiterhin im Browser; dessen verfügbarer Arbeitsspeicher bleibt maßgeblich. Prüfung: 160-MiB-Datei über die tatsächliche Worker-Route mit maximal 8 MiB pro Anfrage, Datenintegrität, Fehler/Abbruch, unvollständige und ungültige Dateien sowie die echte Browser-Uploadfunktion.
+
+Grundlage: https://developers.cloudflare.com/r2/api/workers/workers-multipart-usage/

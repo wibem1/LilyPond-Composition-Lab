@@ -1,9 +1,10 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.26";
+const VERSION="0.1.27";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
 import {automaticOctaveRepair,legacyOctaveOriginal} from '../src/octave-repair.mjs';
+import {soundfontUpload} from '../src/soundfont-upload.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
 import {expressionPlayback} from '../src/expression-playback.mjs';
 import {streamRun,readRunSession,noteRunProgress} from '../src/run-session.mjs';
@@ -255,6 +256,9 @@ async function handle(req,env,ctx){
   try{await putJson(env,'settings/soundfont.json',{name,bytes:data.length,key,savedAt});}catch(e){await env.BUCKET.delete(key);throw e;}
   if(old?.key)try{await env.BUCKET.delete(old.key);}catch{}
   return json({name,bytes:data.length,savedAt,url:'/api/soundfont/file'});
+ }
+ if(p==='/api/soundfont/upload'){
+  try{return json(await soundfontUpload(req,env.BUCKET));}catch(e){return json({error:e.message||'SoundFont-Upload fehlgeschlagen.'},e.status||500);}
  }
  if(req.method==='DELETE'&&p==='/api/soundfont'){
   const old=await getJson(env,'settings/soundfont.json');await env.BUCKET.delete('settings/soundfont.json');if(old?.key)try{await env.BUCKET.delete(old.key);}catch{}
