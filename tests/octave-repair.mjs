@@ -67,6 +67,7 @@ assert.deepEqual(await keys('anchorless-corrected.mid'),await keys('anchorless-a
 for(const source of ["\\new PianoStaff \\relative { c'4 d e f }",absSpelling.replace('PianoStaff','Staff'),absSpelling.replace('\\relative {','\\relative c {')])assert.equal(repairAbsoluteSpelling(source),null);
 const mixed=absSpelling.replace("left = \\relative {", "left = \\relative {").replace(/left = \\relative \{[\s\S]*?\n\}/,"left = \\relative { \\clef bass c4 d e f }");const mixedFixed=repairAbsoluteSpelling(mixed);assert(mixedFixed);assert(mixedFixed.code.includes('left = \\relative { \\clef bass c4 d e f }'));
 console.log('PASS: anchorless first pitch and accent arrows; local drift repair matches actual LilyPond absolute MIDI including chords and grace notes; healthy blocks unchanged, unsupported/other instruments rejected.');
+const midiKeyForTest=(t,octave)=>12*(octave+1)+[0,2,4,5,7,9,11]['cdefgab'.indexOf(t[0])]+((t.match(/is/g)||[]).length-(t.match(/es/g)||[]).length)-(t.startsWith('as')?1:0);
 const {automaticOctaveRepair}=await import('../src/octave-repair.mjs');
 const piano=[{status:'checked',program:0,channel:0,low:21,high:108}];
 const absoluteLow="\\score { { c,,,,4 d,,,, e,,,, f,,,, } \\layout {} \\midi {} }";assert.equal(automaticOctaveRepair(absoluteLow,piano).code,absoluteLow.replaceAll(',,,,',',,'));
@@ -77,3 +78,55 @@ lower = \relative { c,,,,4 d e f }
 const duetFix=automaticOctaveRepair(duet,[{status:'checked',program:42,channel:0,low:36,high:81},...piano],[{channel:0}]);assert(duetFix.code,duetFix.error);const duetNotes=relativeOctavePlan(duetFix.code);assert.deepEqual(duetNotes.filter(t=>t.block===0).map(t=>t.octave),[4,4,4,4]);assert.deepEqual(duetNotes.filter(t=>t.block===1).map(t=>t.octave),[1,1,1,1]);
 assert(automaticOctaveRepair("\\relative c' { << c4 e >> }",piano).error);assert(automaticOctaveRepair("c,,,,4",[{status:'unknown',low:null,high:null}]).error);
 console.log('PASS: app-only absolute/relative range correction, uniform interval preservation, cello/piano assignment and register correction; ambiguous/unsupported music fails explicitly.');
+const mozartDrift=String.raw`
+global = { \\key bes \\major \\time 4/4 }
+right = \\relative c'' {
+  \\global
+  bes4 d8 c bes4 a | g4 f8 g a4 bes | d4 c8 bes a4 g | f2 bes |
+}
+left = \\relative c {
+  \\global
+  bes,4 f' d bes |
+  es,4 bes' g es |
+  f,4 c' a f |
+  bes,4 f' d bes |
+  g,4 d' bes g |
+  c,4 g' es c |
+  f,4 c' a f |
+  bes,4 f' d bes |
+  bes,4 f' d bes |
+  es,4 bes' g es |
+  f,4 c' a f |
+  bes,4 f' d bes |
+  es,4 bes' g es |
+  a,4 e' cis a |
+  d,4 a' f d |
+  g,4 d' bes g |
+  c,4 g' es c |
+  f,4 c' a f |
+  bes,4 f' d bes |
+  es,4 bes' g es |
+  f,4 c' a f |
+  g,4 d' bes g |
+  c,4 g' es c |
+  bes,1
+}
+\\score { \\new PianoStaff << \\new Staff \\with { midiInstrument = "acoustic grand" } { \\right } \\new Staff \\with { midiInstrument = "acoustic grand" } { \\left } >> \\layout {} \\midi {} }
+`;
+const driftPlan=relativeOctavePlan(mozartDrift),driftLeft=driftPlan.filter(t=>t.block===1);
+assert(driftLeft.some(t=>midiKeyForTest(t.token,t.octave)<21),'fixture must reproduce the runaway low register');
+const mozartProfiles=[
+ {status:'checked',program:0,channel:0,low:21,high:108},
+ {status:'checked',program:0,channel:1,low:21,high:108}
+];
+const driftFix=automaticOctaveRepair(mozartDrift,mozartProfiles);
+assert.equal(driftFix.method,'relative-marker-drift');
+assert(octaveOnlyChange(mozartDrift,driftFix.code));
+const repairedLeft=relativeOctavePlan(driftFix.code).filter(t=>t.block===1);
+const repairedKeys=repairedLeft.map(t=>midiKeyForTest(t.token,t.octave));
+assert(repairedKeys.every(k=>k>=21&&k<=108));
+assert(Math.min(...repairedKeys)>=33,'repair should restore the bass pattern, not merely scrape along A0');
+assert(driftFix.code.includes('bes4 f d bes |'));
+assert(!driftFix.code.includes("bes,4 f' d bes |"));
+console.log('PASS: regression 0d1db3d2: cumulative relative-octave drift is repaired at its LilyPond source markers; no individual MIDI-note clamping.');
+
