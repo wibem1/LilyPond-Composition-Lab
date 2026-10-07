@@ -1,9 +1,10 @@
-const VERSION="0.1.16";
+const VERSION="0.1.17";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
 import {applyOctaveEdits,octaveTokens,relativeOctavePlan} from '../src/octave-repair.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
+import {expressionPlayback} from '../src/expression-playback.mjs';
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
 const tag=(v,p)=>String.fromCharCode(...new Uint8Array(v.buffer,v.byteOffset+p,4));
@@ -176,7 +177,14 @@ async function compileLilyMidi(env,code,title,runId,task=''){
  if(code.length>200000)return {error:'LilyPond-Quelle ist zu groß.'};
  try{
   const prepared=ensureMidiDirective(code);
-  const result=await rpc('render',{backend:'svg',src:initialInstrumentNames(prepared.code),version:'stable'});
+  let performance;
+  try{performance=expressionPlayback(prepared.code);}catch(e){performance={code:prepared.code,mode:'fallback',warning:e.message};}
+  let result=await rpc('render',{backend:'svg',src:initialInstrumentNames(performance.code),version:'stable'});
+  if(result.err&&performance.mode==='articulate'){
+   const expressionError=String(result.err)+' '+String(result.logs||'');
+   result=await rpc('render',{backend:'svg',src:initialInstrumentNames(prepared.code),version:'stable'});
+   performance={mode:'fallback',warning:expressionError};
+  }
   const logs=String(result.logs||'');
   if(result.err)return {error:'LilyPond-Kompilierung fehlgeschlagen: '+String(result.err),logs,durationMs:Date.now()-started};
   const pages=[];
@@ -192,7 +200,8 @@ async function compileLilyMidi(env,code,title,runId,task=''){
    }
   }
   else warning='LilyPond erzeugte keine MIDI-Datei.';
-  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
+  if(performance.mode==='fallback')warning=[warning,'Erweiterte Ausdruckswiedergabe fehlgeschlagen; normale MIDI-Wiedergabe verwendet.'].filter(Boolean).join('\n');
+  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
 async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,task=''){

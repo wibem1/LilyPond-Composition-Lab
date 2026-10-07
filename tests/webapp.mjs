@@ -11,13 +11,14 @@ class MemoryBucket{
 const env={BUCKET:new MemoryBucket(),LAB_KEY_ENCRYPTION_KEY:btoa('01234567890123456789012345678901')};
 const tiny=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-response.json',import.meta.url),'utf8')).result;
 const driftMidi=(await readFile(new URL('./fixtures/luna-octave-drift.mid',import.meta.url))).toString('base64');let rendererMidi=null;
+let expressionError=false;
 let paid=0,rendererDown=false,compileError=false,requests=[],rejectKey=false,redirectKey=false;
 let repairAnswer=null,repairMidi=null,repairFinish='stop',compositionFinish='stop';
 let namingAnswers=['Teststück · 2','Nächtlicher Dialog','Dämmerpfade'],namingDown=false;
 const answer='\\version "2.24.3"\n\\header { title = "Teststück" }\n\\score { { c\'4 d\' e\' f\' } \\layout {} \\midi {} }';
 class Socket extends EventTarget{
  accept(){}
- send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
+ send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:expressionError&&d.params.src.includes('labExpressionText')?{err:'expression failed',logs:'synthetic unsupported expression'}:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
  close(){}
 }
 globalThis.fetch=async(url,opts={})=>{
@@ -30,7 +31,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.16'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.17'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -109,3 +110,10 @@ const repairCalls=requests.filter(r=>r.messages[0].content.startsWith('Repariere
 rendererMidi=driftMidi;repairMidi=(await readFile(new URL('./fixtures/luna-octaves-corrected.mid',import.meta.url))).toString('base64');repairAnswer=JSON.stringify({octaves:[6]});
 const relativeManual=await value('/api/repair-octaves',{method:'POST',data:{key:'sk-or-v1-TESTKEY',code:"\\score { \\relative c' { c'4 } \\layout {} \\midi {} }",model:'test/model',runId:'aaaaccccdddd8888'}});assert(relativeManual.compiled.repair);assert(relativeManual.code.includes("c''4"));assert(requests.at(-1).messages[0].content.startsWith('Korrigiere ausschließlich'));assert.equal(requests.at(-1).reasoning.effort,'low');
 console.log('PASS: Worker uses absolute target protocol and mechanical relative encoding before MIDI validation.');
+
+rendererMidi=null;repairMidi=null;compileError=false;
+const expressionCompiled=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Expression test',runId:'abcdef1234567890'}});assert.equal(expressionCompiled.expressionPlayback.mode,'articulate');
+expressionError=true;
+const expressionFallback=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Expression fallback',runId:'abcdef1234567891'}});assert.equal(expressionFallback.expressionPlayback.mode,'fallback');assert(expressionFallback.url);assert(expressionFallback.warning.includes('normale MIDI'));assert(expressionFallback.expressionPlayback.error.includes('expression failed'));
+expressionError=false;
+console.log('PASS: Worker records enhanced playback and safely returns standard MIDI with a visible warning when the expression compiler fails.');

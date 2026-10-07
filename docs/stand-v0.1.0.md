@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.16
+# LilyPond Composition Lab v0.1.17
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -67,3 +67,5 @@ Relative Einzelstimmen: KI liefert nur absolute Zieloktaven als Zahlenliste; die
 Echter Test der absoluten Zieloktaven auf 17d787: komplette Reparatur in 26,8 Sekunden statt etwa 4½ Minuten; Kosten 0,0058575 USD, MIDI 256 Noten C1–D6, Dauer 93,912984 s. Nur Oktavzeichen geändert. Reale Zahlenantwort und korrigierte Quelle als Regression gespeichert.
 
 V0.1.16: Beim erfolgreichen Laden eines eigenen Soundfonts wird die Standardbank aus dem aktiven Synthesizer entfernt. Ein exakter GM-Treffer des Standards kann so keine eigenen Presets mit anderen Bank-/Programmnummern verdecken. Der Standard-Button lädt die Standardbank wieder; ungültige Dateien erhalten den bisherigen Klang, Ladefehler bleiben sichtbar. Während Dateieinlesen/Soundfont-Laden ist Start gesperrt, damit kein paralleler Standard-Ladevorgang ausgelöst wird.
+
+V0.1.17 (07.10.2026): Erweiterte Ausdruckswiedergabe mit LilyPonds articulate.ly. Gedruckter score und separate MIDI-Fassung werden im selben Compilerlauf erzeugt; Originalcode und Notenbild bleiben erhalten. Bögen, Tenuto, Staccato, Akzente und Verzierungen werden im MIDI umgesetzt. Unmarkierte Noten werden nur um 1/16 gekürzt, um eine übermäßig abgesetzte Wiedergabe zu vermeiden. Bekannte ritardando/rallentando/accelerando/a-tempo-Textangaben werden auch in Markup erkannt. Ritardando/Accelerando wirken gemäß articulate als Tempowechsel, nicht als kontinuierliche Rampe; frei formulierte Ausdruckstexte werden nicht interpretiert. Dynamik bleibt LilyPonds notierter Dynamikverlauf, keine zufällige Humanisierung oder zusätzliche KI-Aufrufe. Eigene articulate-Setups werden respektiert. Bei fehlgeschlagener Erweiterung wird die normale MIDI-Fassung mit sichtbarer Warnung verwendet; Diagnose protokolliert Modus und Fehler. Bestehende MIDI-Dateien erhalten die Erweiterung durch „Neu kompilieren“.
