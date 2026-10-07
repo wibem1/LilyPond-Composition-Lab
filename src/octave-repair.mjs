@@ -64,7 +64,7 @@ export function relativeOctavePlan(source){
  for(const match of masked.matchAll(/\\relative\s+((?:es|as|[a-g](?:isis|eses|is|es)?)[',]*)\s*\{/g)){
   const start=match.index+match[0].length-1,end=closingBrace(masked,start);if(end<0||start<lastEnd)return null;
   const body=masked.slice(start,end);
-  if(/\\(?:relative|absolute|fixed|transpose|repeat|alternative|chordmode|drummode|octaveCheck|language|grace|acciaccatura|appoggiatura|afterGrace)\b|<<|>>|\\\\/.test(body))return null;
+  if(/\\(?:relative|absolute|fixed|transpose|repeat|alternative|chordmode|drummode|octaveCheck|language|afterGrace)\b|<<|>>|\\\\/.test(body))return null;
   blocks.push({start,end,anchor:degree(match[1])+(3+marks(match[1]))*7});lastEnd=end;
  }
  if(!blocks.length)return null;

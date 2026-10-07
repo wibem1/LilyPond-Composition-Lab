@@ -47,3 +47,10 @@ const absoluteActual=JSON.parse(await readFile(new URL('./fixtures/gemini-absolu
 assert.equal(applyOctaveEdits(absoluteActual.source,absoluteActual.response),absoluteActual.corrected);
 assert(octaveOnlyChange(absoluteActual.source,absoluteActual.corrected));
 console.log('PASS: real absolute-octave Gemini response on 24-bar piece exactly reproduced; live MIDI 256 notes C1–D6.');
+
+const graceSource=await readFile(new URL('./fixtures/grace-reference.ly',import.meta.url),'utf8');
+const gracePlan=relativeOctavePlan(graceSource);assert.deepEqual(gracePlan.map(t=>t.octave),[5,5,5,6,5,5,4,5,5]);
+const {parseMidi}=await import('../src/midi-reader.mjs');const graceBuffer=await readFile(new URL('./fixtures/grace-reference.mid',import.meta.url));const graceMidi=parseMidi(graceBuffer.buffer.slice(graceBuffer.byteOffset,graceBuffer.byteOffset+graceBuffer.byteLength));assert.deepEqual(graceMidi.events.filter(e=>e.type==='on').map(e=>e.key),[72,79,81,84,76,74,71,72,79]);
+assert.equal(applyAbsoluteOctaves(graceSource.replace("c'4",'c4'),gracePlan.map(t=>t.octave)),graceSource);
+assert.equal(relativeOctavePlan("\\relative c' { \\afterGrace c4 { d16 } }"),null);
+console.log('PASS: actual LilyPond grace/appoggiatura/acciaccatura MIDI agrees with absolute octave plan; fast encoding restores source and afterGrace remains explicitly unsupported.');

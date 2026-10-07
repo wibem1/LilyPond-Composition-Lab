@@ -31,7 +31,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.18'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.19'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -122,3 +122,13 @@ console.log('PASS: Worker records enhanced playback and safely returns standard 
 const legacyIndex=requests.length;namingDown=true;
 await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',system:legacyPrompt,runId:'abcd1234abcd4321'}});assert.equal(requests[legacyIndex].messages[0].content,originalPrompt);namingDown=false;
 console.log('PASS: expression notation in default prompt; both older default prompts upgraded; edited custom prompt retained.');
+
+const streamedRunId='abcd9876abcd9876';namingDown=true;
+const streamedResponse=await call('/api/run-stream',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',runId:streamedRunId}});assert(streamedResponse.headers.get('Content-Type').includes('application/x-ndjson'));
+const events=(await streamedResponse.text()).trim().split('\n').map(s=>JSON.parse(s));assert.equal(events[0].type,'started');assert(events.some(e=>e.type==='progress'));assert(events.some(e=>e.type==='result'&&e.result.answer));
+const streamStatus=await value('/api/run-status?runId='+streamedRunId);assert.equal(streamStatus.status,'completed');assert(streamStatus.result.historyId);const paidAfterStream=paid;
+assert((await (await call('/api/run-stream',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',runId:streamedRunId}})).json()).resume);assert.equal(paid,paidAfterStream);
+await value('/api/client-events',{method:'POST',data:{runId:streamedRunId,events:[{event:'network_error',message:'Failed to fetch sk-or-v1-SECRET',date:'2026-10-07T05:00:00Z',online:false},{event:'recovery_completed',message:'completed'}]}});
+const streamedDiag=await value('/api/diagnosis?runId='+streamedRunId);assert.equal(streamedDiag.runStatus.status,'completed');assert(streamedDiag.entries.some(e=>e.event==='lauf_abgeschlossen'));assert(streamedDiag.entries.some(e=>e.browserEvent==='network_error'));assert(!JSON.stringify(streamedDiag).includes('SECRET'));
+namingDown=false;
+console.log('PASS: shipped stream/status/events routes persist result, avoid duplicate AI calls, and include server completion, browser fetch failure and redacted recovery events in diagnosis.');

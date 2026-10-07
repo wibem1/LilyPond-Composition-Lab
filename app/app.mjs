@@ -1,4 +1,5 @@
 import {SoundFontPlayer} from '/soundfont-player.mjs';
+import {RunClient} from '/run-client.mjs';
 const $=id=>document.getElementById(id);
 const ORIGINAL_SYSTEM='Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf.';
 const TECHNICAL_SYSTEM='Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf. Technische Notation: Verwende absolute Tonhöhen mit ausdrücklich angegebenen Oktaven (ohne \\relative). Prüfe die tatsächlichen Oktavlagen; Verwende für jedes Instrument dessen spielbaren klingenden Tonumfang; für Klavier A0 bis C8. Diese Notationsregel macht keine Vorgaben zur musikalischen Gestaltung.';
@@ -6,12 +7,13 @@ const SYSTEM=ORIGINAL_SYSTEM+' Notiere die musikalisch sinnvollen Ausdruckszeich
 $('system').value=SYSTEM;
 const player=new SoundFontPlayer();let catalog=[],busy=false,ready=false,loading=false,timer,saveChain=Promise.resolve(),restoring=true,modelChoice='';
 let state={historyId:'',runId:'',costs:{composition:0,realisation:0},downloads:[],midiUrl:'',pages:[],compiler:''};
-async function api(path,data,method){const r=await fetch(path,{method:method||(data?'POST':'GET'),headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});const d=await r.json();if(!r.ok){const e=Error(d.error||'HTTP '+r.status);e.details=d;throw e;}return d;}
+async function api(path,data,method){try{const r=await fetch(path,{method:method||(data?'POST':'GET'),headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});const d=await r.json();if(!r.ok){const e=Error(d.error||'HTTP '+r.status);e.details=d;throw e;}return d;}catch(e){runClient.record(runClient.pendingRunId||state.runId,e instanceof TypeError||e.name==='AbortError'?'network_error':'api_error',path+': '+e.message);throw e;}}
 function payload(){return {...state,id:state.historyId,title:$('title').value,task:$('task').value,system:$('system').value,techout:$('code').value,draft:'',format:'lilypond',tokens1:$('tokens').value,compositionModel:$('model').value||modelChoice,realisationModel:'',compiler:$('compiler').textContent};}
 function queueSave(){if(restoring)return;clearTimeout(timer);timer=setTimeout(()=>persist(),550);}
-function persist(){if(restoring)return Promise.resolve();const workspace=payload();saveChain=saveChain.catch(()=>{}).then(()=>api('/api/workspace',{workspace})).then(()=>{$('memoryStatus').textContent='Letzter Arbeitsstand gespeichert.'}).catch(e=>{$('memoryStatus').textContent='Arbeitsstand konnte nicht gespeichert werden: '+e.message;throw e});return saveChain;}
+function persist(){if(restoring||runClient.pendingRunId)return Promise.resolve();const workspace=payload();saveChain=saveChain.catch(()=>{}).then(()=>api('/api/workspace',{workspace})).then(()=>{$('memoryStatus').textContent='Letzter Arbeitsstand gespeichert.'}).catch(e=>{$('memoryStatus').textContent='Arbeitsstand konnte nicht gespeichert werden: '+e.message;throw e});return saveChain;}
 function setBusy(v){busy=v;for(const id of ['compose','compile','repair','new','import','openHistory','deleteHistory','saveHistory'])$(id).disabled=v;}
 function message(s){$('status').textContent=s;}
+const runClient=new RunClient({onprogress:message});
 function invalidate(){player.stop();ready=false;state.midiUrl='';state.pages=[];state.downloads=[];renderResults();$('scoreStatus').textContent='Code geändert. Bitte neu kompilieren.';queueSave();}
 function renderResults(){
  $('score').replaceChildren();for(const p of state.pages||[]){const img=document.createElement('img');img.src=p.url;img.alt=p.label;img.loading='lazy';$('score').append(img)}
@@ -35,8 +37,9 @@ $('compose').onclick=async()=>{
  const task=$('task').value;if(!task.trim())return message('Bitte einen Auftrag eingeben.');
  setBusy(true);state.runId=crypto.randomUUID().replaceAll('-','');state.historyId='';state.costs={composition:0,realisation:0};renderResults();message('Compiler wird vor dem KI-Aufruf geprüft …');
  try{
-  const d=await api('/api/run',{runId:state.runId,key:$('key').value,model:$('model').value,task,system:$('system').value,maxTokens:Number($('tokens').value),title:$('title').value});
-  $('code').value=d.answer;$('title').value=d.title;state.historyId=d.historyId;state.downloads=d.downloads;state.costs=d.costs||{composition:Number(d.usage?.cost)||0,realisation:0};
+  await persist();
+  const d=await runClient.start({runId:state.runId,key:$('key').value,model:$('model').value,task,system:$('system').value,maxTokens:Number($('tokens').value),title:$('title').value});
+  state.runId=d.runId||state.runId;$('code').value=d.answer;$('title').value=d.title;state.historyId=d.historyId;state.downloads=d.downloads;state.costs=d.costs||{composition:Number(d.usage?.cost)||0,realisation:0};
   await compiledResult(d.compiled);await persist();await refreshHistory();
   message(d.compiled.incomplete?d.compiled.error:d.compiled.repairFailed?'Oktavkorrektur fehlgeschlagen. Das Stück ist weiterhin fehlerhaft.':d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
   if(d.finish_reason==='length'&&!d.compiled.incomplete)message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
@@ -44,7 +47,7 @@ $('compose').onclick=async()=>{
   if(d.titleWarning)message($('status').textContent+'\n'+d.titleWarning);
  if(d.compiled.warning)message($('status').textContent+'\n'+d.compiled.warning);
   else if(d.compiled.rangeCheck?.status==='passed')message($('status').textContent+'\nTonumfangprüfung bestanden.');
- }catch(e){message('Fehler: '+e.message);if(e.details&&/Schlüssel|Anmeldung/.test(e.message)){$('connectionDetails').open=true;$('connection').scrollIntoView({behavior:'smooth'});$('keyStatus').textContent=e.message;}queueSave()}finally{setBusy(false);renderResults()}
+ }catch(e){message('Fehler: '+e.message);if(e.details&&/Schlüssel|Anmeldung/.test(e.message)){$('connectionDetails').open=true;$('connection').scrollIntoView({behavior:'smooth'});$('keyStatus').textContent=e.message;}if(!runClient.pendingRunId)queueSave()}finally{setBusy(false);renderResults()}
 };
 $('repair').onclick=async()=>{
  if(busy||!$('code').value.trim())return;setBusy(true);state.runId||=crypto.randomUUID().replaceAll('-','');message('Oktavlagen werden geprüft und bei Bedarf korrigiert …');
@@ -60,7 +63,7 @@ $('new').onclick=()=>{player.stop();ready=false;state={historyId:'',runId:'',cos
 $('saveHistory').onclick=()=>saveHistory().catch(e=>{$('memoryStatus').textContent=e.message});
 $('openHistory').onclick=async()=>{try{if(!$('history').value)return;apply((await api('/api/history/'+$('history').value)).entry);await persist()}catch(e){$('memoryStatus').textContent=e.message}};
 $('deleteHistory').onclick=async()=>{const id=$('history').value;if(!id)return;if(!confirm('Die ausgewählte Komposition aus dem Verlauf löschen?'))return;try{await api('/api/history/'+id,null,'DELETE');if(state.historyId===id)state.historyId='';await refreshHistory();await persist()}catch(e){$('memoryStatus').textContent=e.message}};
-$('diagnosis').onclick=async()=>{if(state.runId)location.href='/api/diagnosis?runId='+encodeURIComponent(state.runId);};
+$('diagnosis').onclick=async()=>{await runClient.flush();if(state.runId)location.href='/api/diagnosis?runId='+encodeURIComponent(state.runId);};
 async function keyStatus(){const d=await api('/api/key-status');$('keyStatus').textContent=d.stored?'Schlüssel für diese App verschlüsselt gespeichert. Mit „Verbindung prüfen“ testen.':'Noch kein Schlüssel gespeichert.';$('saveKey').disabled=!d.canStore;}
 $('saveKey').onclick=async()=>{try{await api('/api/key-store',{key:$('key').value});$('key').value='';await keyStatus()}catch(e){$('keyStatus').textContent=e.message}};
 $('checkKey').onclick=async()=>{try{await api('/api/key-check',{key:$('key').value});$('keyStatus').textContent='OpenRouter-Verbindung geprüft. Der Schlüssel wird akzeptiert. Keine Komposition gestartet.'}catch(e){$('keyStatus').textContent=e.message}};
@@ -76,8 +79,16 @@ $('defaultFont').onclick=async()=>{if(loading)return;loading=true;$('font').disa
 let installPrompt;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e});$('installApp').onclick=async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null}else{$('installHelp').hidden=false;$('installHelp').textContent='Android: Browser-Menü → App installieren. iPad: Safari → Teilen → Zum Home-Bildschirm. Danach über das Icon starten.'}};
 if(matchMedia('(display-mode: standalone)').matches||navigator.standalone)$('installApp').hidden=true;
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).catch(()=>{});
-window.addEventListener('pagehide',()=>{if(!restoring)navigator.sendBeacon('/api/workspace',new Blob([JSON.stringify({workspace:payload()})],{type:'application/json'}))});
-async function boot(){renderResults();try{const d=await api('/api/workspace');if(d.workspace)apply(d.workspace)}catch(e){$('memoryStatus').textContent='Letzter Arbeitsstand: '+e.message}restoring=false;await Promise.allSettled([models(),refreshHistory(),keyStatus()]);}
+window.addEventListener('pagehide',()=>{if(!restoring&&!runClient.pendingRunId)navigator.sendBeacon('/api/workspace',new Blob([JSON.stringify({workspace:payload()})],{type:'application/json'}))});
+async function boot(){renderResults();try{const d=await api('/api/workspace');if(d.workspace)apply(d.workspace)}catch(e){$('memoryStatus').textContent='Letzter Arbeitsstand: '+e.message}restoring=false;await Promise.allSettled([models(),refreshHistory(),keyStatus()]);if(runClient.pendingRunId)await recoverPending();}
+async function recoverPending(){
+ if(busy||!runClient.pendingRunId)return;setBusy(true);state.runId=runClient.pendingRunId;runClient.record(state.runId,'page_restored');message('Vorheriger Auftrag wird wiederhergestellt …');
+ try{const d=await runClient.recover();$('code').value=d.answer;$('title').value=d.title;state.historyId=d.historyId;state.downloads=d.downloads;state.costs=d.costs;await compiledResult(d.compiled);await persist();await refreshHistory();message('Ergebnis wiederhergestellt.'+(d.compiled.warning?'\n'+d.compiled.warning:''));}catch(e){message(e.message);}finally{setBusy(false);renderResults();}
+}
+window.addEventListener('offline',()=>runClient.record(runClient.pendingRunId||state.runId,'offline','Browser meldet keine Internetverbindung.'));
+window.addEventListener('online',()=>{runClient.record(runClient.pendingRunId||state.runId,'online');runClient.flush();if(!busy)recoverPending();});
+window.addEventListener('error',e=>runClient.record(runClient.pendingRunId||state.runId,'browser_error',e.message));
+window.addEventListener('unhandledrejection',e=>runClient.record(runClient.pendingRunId||state.runId,'browser_error',String(e.reason?.message||e.reason||'Unbehandelte Ausnahme')));
 boot();
 
 const context=document.modelContext;

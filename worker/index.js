@@ -1,10 +1,11 @@
-const VERSION="0.1.18";
+const VERSION="0.1.19";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
 import {applyOctaveEdits,octaveTokens,relativeOctavePlan} from '../src/octave-repair.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
 import {expressionPlayback} from '../src/expression-playback.mjs';
+import {streamRun,readRunSession,noteRunProgress} from '../src/run-session.mjs';
 const randomUUID=()=>crypto.randomUUID();
 const parseMidi=(()=>{
 const tag=(v,p)=>String.fromCharCode(...new Uint8Array(v.buffer,v.byteOffset+p,4));
@@ -118,6 +119,7 @@ async function getJson(env,name){const o=await env.BUCKET.get(name);return o?o.j
 async function putJson(env,name,data){await env.BUCKET.put(name,JSON.stringify(data),{httpMetadata:{contentType:'application/json'}})}
 async function listAll(env,prefix){let cursor,objects=[];do{const r=await env.BUCKET.list({prefix,cursor,include:['customMetadata']});objects.push(...r.objects);cursor=r.truncated?r.cursor:null;}while(cursor);return objects}
 async function log(env,event,runId,data){
+ noteRunProgress(runId,event,data);
  const name=`logs/${safe(runId)}/${Date.now()}-${randomUUID()}.json`;
  await putJson(env,name,{date:new Date().toISOString(),app:'LilyPond Composition Lab',version:VERSION,event,...data});
  return '/api/diagnosis?runId='+encodeURIComponent(runId);
@@ -238,7 +240,7 @@ async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,t
  }
  return {code,compiled:{...compiled,repairFailed:true,warning:compiled.warning+'\nAutomatische Oktavkorrektur nach zwei Prüfungen nicht erfolgreich; Original erhalten.'},cost};
 }
-async function handle(req,env){
+async function handle(req,env,ctx){
  const url=new URL(req.url),p=url.pathname;
  if(req.headers.get('Origin')&&req.headers.get('Origin')!==url.origin)return json({error:'Unzulässiger Ursprung.'},403);
  if(req.method==='GET'&&p==='/')return text(PAGE,'text/html; charset=utf-8');
@@ -247,6 +249,26 @@ async function handle(req,env){
  if(req.method==='GET'&&p==='/manifest.webmanifest')return text(JSON.stringify({id:'/',name:'LilyPond Composition Lab',short_name:'LilyPond Composition Lab',lang:'de',start_url:'/',scope:'/',display:'standalone',display_override:['standalone'],background_color:'#182231',theme_color:'#182231',prefer_related_applications:false,icons:[{src:'/icon-192.png',sizes:'192x192',type:'image/png',purpose:'any'},{src:'/icon-512.png',sizes:'512x512',type:'image/png',purpose:'any'},{src:'/icon-maskable-512.png',sizes:'512x512',type:'image/png',purpose:'maskable'}]}),'application/manifest+json');
  if(req.method==='GET'&&ASSETS[p])return text(asset(p),ASSETS[p].type);
  if(!env.BUCKET)return json({error:'Datenspeicher derzeit nicht verfügbar. Bitte später erneut versuchen.'},503);
+ const runIO={read:name=>getJson(env,name),write:(name,data)=>putJson(env,name,data),log:(event,id,data)=>log(env,event,id,data)};
+ if(req.method==='POST'&&p==='/api/run-stream'){
+  const b=await body(req),id=historyId(b.runId);if(!id)return json({error:'Ungültige Auftragskennung.'},400);
+  const copy=new Request(req.url,{method:'POST',headers:req.headers,body:JSON.stringify(b)});
+  return streamRun(copy,env,ctx,id,run,runIO);
+ }
+ if(req.method==='GET'&&p==='/api/run-status'){
+  const id=historyId(url.searchParams.get('runId'));if(!id)return json({error:'Ungültige Auftragskennung.'},400);
+  const session=await readRunSession(id,runIO);return session?json(session):json({status:'unknown',runId:id});
+ }
+ if(req.method==='POST'&&p==='/api/client-events'){
+  const b=await body(req),id=historyId(b.runId);if(!id)return json({error:'Ungültige Auftragskennung.'},400);
+  const allowed=new Set(['network_error','api_error','stream_error','offline','online','recovery_started','recovery_completed','recovery_stopped','page_restored','browser_error']);
+  for(const e of (Array.isArray(b.events)?b.events:[]).slice(0,30))if(allowed.has(e.event)){
+   const message=String(e.message||'').slice(0,500).replace(/sk-[A-Za-z0-9_-]+/g,'[API-Schlüssel]');
+   await log(env,'browser_ereignis',id,{browserEvent:e.event,message,clientDate:String(e.date||'').slice(0,40),online:typeof e.online==='boolean'?e.online:null});
+  }
+  return json({saved:true});
+ }
+
  if(req.method==='GET'&&p==='/api/key-status')return json({stored:!!await getJson(env,'settings/key.json'),canStore:!!env.LAB_KEY_ENCRYPTION_KEY});
  if(req.method==='POST'&&p==='/api/key-store'){const b=await body(req),key=normalizeKey(b.key);await checkKey(key);await storeKey(env,key);return json({stored:true,verified:true})}
  if(req.method==='POST'&&p==='/api/key-check'){const b=await body(req);try{return json(await checkKey(normalizeKey(b.key||await storedKey(env))))}catch(e){return json({error:e.message},e.status||400)}}
@@ -298,9 +320,9 @@ async function handle(req,env){
   const entry={title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compiler:clean(w.compiler),pages:validDownloads(w.pages),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||64000),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:{composition:Number(w.costs?.composition)||0,realisation:Number(w.costs?.realisation)||0},downloads:validDownloads(w.downloads),midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};await putJson(env,'workspace/current.json',entry);return json({saved:true});
  }
  if(req.method==='GET'&&p==='/api/diagnosis'){
-  const runId=safe(url.searchParams.get('runId')||''),objects=await listAll(env,'logs/'+runId+'/');const entries=await Promise.all(objects.map(o=>getJson(env,o.key)));entries.sort((a,b)=>a.date.localeCompare(b.date));if(!entries.length)return json({error:'Kein Protokoll gefunden.'},404);
+  const runId=safe(url.searchParams.get('runId')||''),session=await readRunSession(runId,runIO),objects=await listAll(env,'logs/'+runId+'/');const entries=await Promise.all(objects.map(o=>getJson(env,o.key)));entries.sort((a,b)=>a.date.localeCompare(b.date));if(!entries.length)return json({error:'Kein Protokoll gefunden.'},404);
   const costs={composition:0,realisation:0,total:0};for(const e of entries){const c=Number(e.usage?.cost);if(Number.isFinite(c)){if(e.stage==='composition')costs.composition+=c;if(e.stage==='realisation')costs.realisation+=c;costs.total+=c}}
-  return text(JSON.stringify({app:'LilyPond Composition Lab',version:VERSION,createdAt:new Date().toISOString(),runId,costs,entries},null,2),'application/json; charset=utf-8',{'Content-Disposition':`attachment; filename="Diagnose-${runId}.json"`});
+  return text(JSON.stringify({app:'LilyPond Composition Lab',version:VERSION,createdAt:new Date().toISOString(),runId,costs,runStatus:session?{status:session.status,phase:session.phase,startedAt:session.startedAt,updatedAt:session.updatedAt}:null,entries},null,2),'application/json; charset=utf-8',{'Content-Disposition':`attachment; filename="Diagnose-${runId}.json"`});
  }
  if(req.method==='POST'&&p==='/api/run')return run(req,env);
  return json({error:'Nicht gefunden'},404);
@@ -389,4 +411,4 @@ async function run(req,env){
   return json({runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,costs:base.costs,titleWarning,finish_reason:finish,compiled,durationMs:Date.now()-started});
  }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{error,status:e.status||null,providerError:e.providerError?.replaceAll(key||'\u0000','[API-Schlüssel]')||null,durationMs:Date.now()-started});return json({error,runId},e.status===401?401:502)}
 }
-export default {async fetch(request,env,ctx){try{return await handle(request,env)}catch(e){return json({error:e.name==='AbortError'?'Zeitüberschreitung beim Onlinedienst.':String(e.message||e)},e.status||500)}}};
+export default {async fetch(request,env,ctx){try{return await handle(request,env,ctx)}catch(e){return json({error:e.name==='AbortError'?'Zeitüberschreitung beim Onlinedienst.':String(e.message||e)},e.status||500)}}};
