@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.34
+# LilyPond Composition Lab v0.1.35
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -172,3 +172,7 @@ Fehler in v0.1.33: Die Optimierung der gesamten Hilfslinienzahl erlaubte eine Li
 Beim erneuten Kompilieren wird eine bereits eingefügte automatische Linie nur dann entfernt und neu beurteilt, wenn das Protokoll exakt denselben uneditierten Code und die erfolgreiche automatische MIDI-Prüfung nachweist. Manuell gesetzte oder anschließend bearbeitete Oktavlinien bleiben erhalten. Quelle: Gerou/Lusk, Essential Dictionary of Music Notation, Abschnitt Octave signs, Seiten 97–101 (https://musescore.org/sites/musescore.org/files/2022-02/EssentialDictionaryOfMusicNotation_0.pdf). Die Linie dient der Vermeidung zahlreicher Hilfslinien, beginnt an der ersten betroffenen Note und überbrückt lediglich kurze Pausen.
 
 Lokale Prüfung des gemeldeten korrigierten Quelltexts: statt Takt 11–24 nur Takt 20–24. Kein neuer Live-Renderer-/Android-Sichttest; die MIDI-Identitätsprüfung vor Übernahme bleibt aktiv.
+
+### v0.1.35 – Senden an Hacklily
+
+Ein Button neben „Neu kompilieren“ öffnet den aktuellen Inhalt des LilyPond-Editors in einem neuen Hacklily-Tab über dessen src-Parameter. Auch ungespeicherte Änderungen werden übernommen; kein zusätzlicher KI-Aufruf und keine vorherige Neukompilierung. Leerer Code führt zu einem Hinweis. Der Quelltext wird URL-kodiert übertragen, der neue Tab hat keinen Zugriff auf die Ursprungsseite. Hacklily behandelt src als importierte, schreibgeschützte Vorlage. Grundlage ist die offizielle Implementierung in src/components/App.tsx und src/routes/index.tsx des Hacklily-Repositories.
