@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.32
+# LilyPond Composition Lab v0.1.33
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -156,3 +156,11 @@ Die Auswahl gilt anbieterübergreifend: „Kurz“ sendet `reasoning.effort=low`
 ### v0.1.32 – lesbare Mindesthöhen der Textfelder
 
 Kompositionsauftrag, Zusatzangaben und LilyPond-Code erhalten Mindesthöhen von 8, 11 und 24 rem. Selbst ein vom Browser wiederhergestelltes oder manuell verkleinertes Feld kann die erste Textzeile nicht mehr abschneiden. Die Felder bleiben nach oben vergrößerbar. Build, Worker-Funktionstests und Artefaktprüfung bestanden. Die zusätzliche lokale Browserprüfung konnte wegen eines fehlenden Chromium-Browsers und fehlgeschlagener Browserdownloads nicht durchgeführt werden; kein tatsächlicher Android-Sichttest.
+
+### v0.1.33 – automatische Oktavlinien ohne kurze Wechsel
+
+Bei erkanntem Klaviersatz werden sequenzielle benannte Stimmen mit eindeutigem Violin-/Bassschlüssel auf sinnvoll zusammenhängende Oktavpassagen geprüft. Startschwelle sind vier Hilfslinien; die gewählte Schreibweise muss die Hilfslinien insgesamt reduzieren. Eine Linie umfasst mindestens zwei besetzte Takte und drei Ereignisse, bleibt über Pausen und kleinere Registerschwankungen bestehen und wechselt nicht zwischen 8va und 15ma innerhalb einer Passage. Würden inkompatible Zwischenabschnitte kurze Wechsel erzwingen, bleibt die betreffende Stimme unverändert. Weit gespreizte Akkorde, eigene Oktavlinien, komplexe Mehrstimmigkeit, Wiederholungen und nicht sicher analysierbare Syntax werden nicht umgeschrieben. Die neue Quelle fügt ausschließlich Ottava-Kommandos ein, ohne Tonhöhen zu ändern.
+
+Vor der Übernahme rendert der Worker beide Fassungen und vergleicht alle geparsten MIDI-Ereignisse, PPQ und Dauer: Tonhöhen, Anschläge, Notenenden, Dynamik/Velocity, Tempo, Pedal und andere Controller müssen identisch bleiben. Bei Abweichung oder Compilerfehler bleiben ursprüngliche Noten und MIDI erhalten. Tatsächliche Oktavfehler werden vorher durch die vorhandene Korrektur behandelt. Die optimierte Quelle wird für Editor, Verlauf und LilyPond-Download übernommen. Bestehende Stücke übernehmen die Lesehilfe mit „Neu kompilieren“. Kein zusätzlicher KI-Aufruf; nur bei einer geplanten Verbesserung ist ein weiterer Compilerlauf nötig. Diagnose enthält die Passagen und die MIDI-Prüfung. Tests: absolute/relative Quellen, Akkorde, Pausen/Registerdips, Ausschluss kurzer Wechsel und Einzelspitzen, Quellenintegrität, bestehende Oktavkorrektur sowie Übernahme/Ablehnung über die tatsächliche Worker-Route mit simuliertem Renderer. Ein neuer Live-Renderer-Test wurde nicht ausgeführt.
+
+Grundlagen: https://lilypond.org/doc/v2.24/Documentation/notation/displaying-pitches#ottava-brackets und https://www.behindbarsnotation.co.uk/contents/sample_pages.pdf

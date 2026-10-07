@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import {automaticOttava,sameMidiPerformance} from '../src/automatic-ottava.mjs';
+const score=(music,clef='treble',mode='')=>`voiceMusic = ${mode}{ \\clef ${clef} ${music} }\n\\score { \\new PianoStaff << \\new Staff \\voiceMusic >> \\layout {} \\midi {} }`;
+const strip=s=>s.replace(/\\ottava #(?:-?\d+)\s*/g,'').replace(/\s+/g,'');
+const notes="g'''4 a''' b''' c'''' | c''4 d'' e'' f'' | g'''4 a''' b''' c'''' |";
+const original=score(notes),high=automaticOttava(original);
+assert.equal(high.passages.length,1);assert.equal(high.passages[0].octaves,1);
+assert.equal((high.code.match(/\\ottava #1/g)||[]).length,1);
+assert.equal((high.code.match(/\\ottava #0/g)||[]).length,1);
+assert.equal(strip(high.code),strip(original));
+// Moderate dips and rests never cause repeated starts/stops.
+const rest=automaticOttava(score("g'''4 a''' b''' c'''' | r1 | g'''4 a''' b''' c'''' |"));
+assert.equal(rest.passages.length,1);
+const jumping=automaticOttava(score("g'''4 a''' b''' c'''' | g'''4 a''' b''' c'''' | c'1 | g'''4 a''' b''' c'''' | g'''4 a''' b''' c'''' |"));
+assert.equal(jumping.passages.length,0);
+assert.equal(automaticOttava(score("g'''4 a''' b''' c'''' |")).passages.length,0);
+assert.equal(automaticOttava(score("c''4 d'' e'' f'' | g''4 a'' b'' c''' |")).passages.length,0);
+const bass=automaticOttava(score('c,,4 d,, e,, f,, | c,,4 d,, e,, f,, |','bass'));
+assert.equal(bass.passages[0].octaves,-1);
+const two=automaticOttava(score("g''''4 a'''' b'''' c''''' | g''''4 a'''' b'''' c''''' |"));
+assert.equal(two.passages[0].octaves,2);assert.equal(two.passages.length,1);
+const chordOriginal=score("<g''' b''' d''''>2 <a''' c'''' e''''> | <g''' b''' d''''>1 |");
+const chord=automaticOttava(chordOriginal);
+assert(chord.code.includes("\\ottava #1 <g''' b''' d''''>"));assert.equal(strip(chord.code),strip(chordOriginal));
+const wide=automaticOttava(score("<c' g'''>1 | <c' g'''>1 |"));assert.equal(wide.passages.length,0);
+const relativeOriginal=score("g'4 a b c | g4 a b c |",'treble',"\\relative c''' ");
+const relative=automaticOttava(relativeOriginal);assert.equal(relative.passages.length,1);assert.equal(strip(relative.code),strip(relativeOriginal));
+for(const source of [original.replace('PianoStaff','StaffGroup'),original.replace('g\'\'\'4',"\\ottava #1 g'''4"),original.replace('g\'\'\'4',"\\repeat volta 2 { g'''4 }"),original.replace('g\'\'\'4',"\\clef bass g'''4")])assert.equal(automaticOttava(source).code,source);
+assert.equal(automaticOttava(high.code).code,high.code);
+const midi={ppq:480,duration:1,events:[{type:'on',key:72,ch:0,tick:0,sec:0,vel:90},{type:'off',key:72,ch:0,tick:480,sec:1,vel:0}]};
+assert(sameMidiPerformance(midi,structuredClone(midi)));
+for(const key of ['key','vel','tick','sec','ch']){const altered=structuredClone(midi);altered.events[0][key]++;assert(!sameMidiPerformance(midi,altered));}
+assert(!sameMidiPerformance(midi,{...midi,ppq:960}));
+console.log('PASS: continuous measure passages across dips/rests, 8va/8vb/15ma, chords, relative/absolute notes, unchanged source pitches, singleton/wide-chord/author/unsupported exclusions and strict MIDI event comparison.');

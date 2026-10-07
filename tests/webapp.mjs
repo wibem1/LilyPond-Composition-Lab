@@ -11,15 +11,16 @@ class MemoryBucket{
 const env={BUCKET:new MemoryBucket(),LAB_KEY_ENCRYPTION_KEY:btoa('01234567890123456789012345678901')};
 const tiny=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-response.json',import.meta.url),'utf8')).result;
 const driftMidi=(await readFile(new URL('./fixtures/luna-octave-drift.mid',import.meta.url))).toString('base64');let rendererMidi=null;
-let expressionError=false,localRepairSource=null,localRepairMidi=null;
+let expressionError=false,localRepairSource=null,localRepairMidi=null,ottavaTest='same';
 let paid=0,rendererDown=false,compileError=false,requests=[],rejectKey=false,redirectKey=false;
 let repairAnswer=null,repairMidi=null,repairFinish='stop',compositionFinish='stop',reportedModel=undefined;
 let namingAnswers=['Teststück · 2','Nächtlicher Dialog','Dämmerpfade'],namingDown=false;
 const answer='\\version "2.24.3"\n\\header { title = "Teststück" }\n\\score { { c\'4 d\' e\' f\' } \\layout {} \\midi {} }';
 const attributedAnswer='% KI-Modell: test/model\n'+answer.replace('title = "Teststück" }','title = "Teststück" \n  composer = "test/model"\n}');
+const withoutOttava=s=>s.replace(/\\ottava #-?\d+\s*/g,'').replace(/\s+/g,' ').trim();
 class Socket extends EventTarget{
  accept(){}
- send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:localRepairSource&&d.params.src.includes(localRepairSource)?{...tiny,midi:localRepairMidi}:expressionError&&d.params.src.includes('labExpressionText')?{err:'expression failed',logs:'synthetic unsupported expression'}:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
+ send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:d.params.src.includes('\\ottava #')&&ottavaTest==='error'?{err:'ottava rendering failed'}:d.params.src.includes('\\ottava #')&&ottavaTest==='different'?{...tiny,midi:driftMidi}:localRepairSource&&d.params.src.includes(localRepairSource)?{...tiny,midi:localRepairMidi}:expressionError&&d.params.src.includes('labExpressionText')?{err:'expression failed',logs:'synthetic unsupported expression'}:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
  close(){}
 }
 globalThis.fetch=async(url,opts={})=>{
@@ -32,7 +33,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.32'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.33'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -119,8 +120,8 @@ console.log('PASS: shipped stream/status/events routes persist result, avoid dup
 const {repairAbsoluteSpelling}=await import('../src/octave-repair.mjs');
 const localOriginal=await readFile(new URL('./fixtures/anchorless-absolute-spelling.ly',import.meta.url),'utf8');const localFixed=repairAbsoluteSpelling(localOriginal);
 localRepairSource=localFixed.code.match(/c''4[^\n]+/)[0];localRepairMidi=(await readFile(new URL('./fixtures/anchorless-corrected.mid',import.meta.url))).toString('base64');rendererMidi=driftMidi;repairMidi=null;
-const localPaid=paid;const autoLocal=await value('/api/compile-lilypond',{method:'POST',data:{code:localOriginal,runId:'aa0011223344556676'}});assert.equal(autoLocal.code,localFixed.code);assert.equal(autoLocal.rangeCheck.status,'passed');assert.equal(paid,localPaid);const localResult=await value('/api/repair-octaves',{method:'POST',data:{key:'sk-or-v1-TESTKEY',model:'test/model',runId:'aa0011223344556677',code:localOriginal}});
-assert.equal(paid,localPaid);assert.equal(localResult.code,localFixed.code);assert.equal(localResult.cost,0);assert.equal(localResult.compiled.rangeCheck.status,'passed');assert(localResult.compiled.repair.includes('Keine KI-Aufrufe'));
+const localPaid=paid;const autoLocal=await value('/api/compile-lilypond',{method:'POST',data:{code:localOriginal,runId:'aa0011223344556676'}});assert.equal(withoutOttava(autoLocal.code),withoutOttava(localFixed.code));assert.equal(autoLocal.rangeCheck.status,'passed');assert.equal(paid,localPaid);const localResult=await value('/api/repair-octaves',{method:'POST',data:{key:'sk-or-v1-TESTKEY',model:'test/model',runId:'aa0011223344556677',code:localOriginal}});
+assert.equal(paid,localPaid);assert.equal(withoutOttava(localResult.code),withoutOttava(localFixed.code));assert.equal(localResult.cost,0);assert.equal(localResult.compiled.rangeCheck.status,'passed');assert(localResult.compiled.repair.includes('Keine KI-Aufrufe'));
 const localDiag=await value('/api/diagnosis?runId=aa0011223344556677');assert(localDiag.entries.some(e=>e.event==='korrektur'&&e.paidCalls===0&&e.accepted===true));
 localRepairSource=null;rendererMidi=null;
 // Short thinking is explicit, retained in memory/history and logged; default stays unrestricted.
@@ -183,7 +184,7 @@ localRepairSource=expectedFix.code.split('left =')[1].split('dynamics =')[0];
 localRepairMidi=(await readFile(new URL('./fixtures/anchorless-corrected.mid',import.meta.url))).toString('base64');rendererMidi=driftMidi;
 const paidBeforeLegacy=paid;
 const restored=await value('/api/compile-lilypond',{method:'POST',data:{code:legacyCode,runId:legacyRun}});
-assert.equal(restored.code,expectedFix.code);assert.equal(restored.rangeCheck.status,'passed');assert(restored.repair.includes('protokollierten Original'));assert.equal(paid,paidBeforeLegacy);
+assert.equal(withoutOttava(restored.code),withoutOttava(expectedFix.code));assert.equal(restored.rangeCheck.status,'passed');assert(restored.repair.includes('protokollierten Original'));assert.equal(paid,paidBeforeLegacy);
 localRepairSource=null;rendererMidi=null;
 const editedLegacy=legacyCode.replace('bes4 f d bes','bes4 f d a');
 const editedResult=await value('/api/compile-lilypond',{method:'POST',data:{code:editedLegacy,runId:legacyRun}});
@@ -248,3 +249,23 @@ for(const model of ['openai/test-model','google/test-model','other/test-model'])
 }
 namingDown=false;
 console.log('PASS: all three quality choices apply across provider IDs and survive history reload.');
+
+// The notation optimization must fall back if the renderer changes playback.
+const highPiano=String.raw`\version "2.24.3"
+part = { \clef treble g'''4 a''' b''' c'''' | g'''4 a''' b''' c'''' | }
+\score { \new PianoStaff << \new Staff \part >> \layout {} \midi {} }`;
+const notationPaid=paid;
+for(const mode of ['same','different','error']){
+ ottavaTest=mode;
+ const result=await value('/api/compile-lilypond',{method:'POST',data:{code:highPiano,runId:'abcd3333abcd'+(mode==='same'?'1111':mode==='different'?'2222':'3333')}});
+ if(mode==='same'){
+  assert.equal(result.ottava.status,'applied');assert(result.ottava.midiUnchanged);
+  assert(result.code.includes('\\ottava #1'));assert(result.code.includes('\\ottava #0'));
+  assert.equal(withoutOttava(result.code),withoutOttava(highPiano));
+ }else{
+  assert.equal(result.ottava.status,'rejected');assert.equal(result.code,undefined);
+  assert(result.warning.includes('ursprüngliche Notation'));assert(result.url);assert(result.pages.length);
+ }
+}
+assert.equal(paid,notationPaid);ottavaTest='same';
+console.log('PASS: ottava render accepted only for identical MIDI; changed playback and compiler failure preserve original score/MIDI; no AI calls.');

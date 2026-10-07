@@ -1,5 +1,5 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.32";
+const VERSION="0.1.33";
 import {compositionAttribution} from '../src/composition-attribution.mjs';
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
@@ -7,6 +7,7 @@ import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
 import {automaticOctaveRepair,legacyOctaveOriginal} from '../src/octave-repair.mjs';
 import {soundfontUpload} from '../src/soundfont-upload.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
+import {automaticOttava,sameMidiPerformance} from '../src/automatic-ottava.mjs';
 import {expressionPlayback} from '../src/expression-playback.mjs';
 import {streamRun,readRunSession,noteRunProgress} from '../src/run-session.mjs';
 const randomUUID=()=>crypto.randomUUID();
@@ -190,6 +191,25 @@ async function compileLilyMidi(env,code,title,runId,task=''){
    result=await rpc('render',{backend:'svg',src:initialInstrumentNames(prepared.code),version:'stable'});
    performance={mode:'fallback',warning:expressionError};
   }
+  let ottava={status:'unchanged',passages:[]},displayCode='';
+  if(!result.err&&result.midi){
+   try{
+    const originalBytes=bytes64(result.midi),originalMidi=parseMidi(originalBytes.buffer.slice(originalBytes.byteOffset,originalBytes.byteOffset+originalBytes.byteLength));
+    // First repair genuine pitch errors. Display optimization never hides them.
+    if(checkInstrumentRanges(originalMidi).status==='passed'&&checkInstrumentRegisters(originalMidi,task).status!=='warning'){
+     const planned=automaticOttava(code);
+     if(planned.passages.length){
+      const visualPrepared=ensureMidiDirective(planned.code).code;
+      const visual=performance.mode==='articulate'?expressionPlayback(visualPrepared).code:visualPrepared;
+      const candidate=await rpc('render',{backend:'svg',src:initialInstrumentNames(visual),version:'stable'});
+      if(candidate.err||!candidate.midi||!(candidate.files||[]).some(f=>typeof f==='string'&&f.includes('<svg')))throw Error('Oktavzeichen konnten nicht fehlerfrei kompiliert werden.');
+      const bytes=bytes64(candidate.midi),midi=parseMidi(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
+      if(!sameMidiPerformance(originalMidi,midi))throw Error('MIDI unterscheidet sich nach der Notationsänderung.');
+      result=candidate;displayCode=planned.code;ottava={status:'applied',passages:planned.passages,midiUnchanged:true};
+     }
+    }
+   }catch(e){ottava={status:'rejected',passages:[],error:String(e.message||e)};}
+  }
   const logs=String(result.logs||'');
   if(result.err)return {error:'LilyPond-Kompilierung fehlgeschlagen: '+String(result.err),logs,durationMs:Date.now()-started};
   const pages=[];
@@ -206,7 +226,8 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   }
   else warning='LilyPond erzeugte keine MIDI-Datei.';
   if(performance.mode==='fallback')warning=[warning,'Erweiterte Ausdruckswiedergabe fehlgeschlagen; normale MIDI-Wiedergabe verwendet.'].filter(Boolean).join('\n');
-  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,trillPolicy:performance.mode==='articulate'?'musical-v2':null,arpeggioPolicy:performance.mode==='articulate'?'rolled-chord-v1':null,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
+  if(ottava.status==='rejected')warning=[warning,'Automatische Oktavzeichen nicht übernommen; ursprüngliche Notation erhalten.'].filter(Boolean).join('\n');
+  return {...(displayCode?{code:displayCode}:{}),ottava,url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,trillPolicy:performance.mode==='articulate'?'musical-v2':null,arpeggioPolicy:performance.mode==='articulate'?'rolled-chord-v1':null,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
 async function repairOctaves(env,code,title,runId,compiled,task=''){
@@ -219,7 +240,7 @@ async function repairOctaves(env,code,title,runId,compiled,task=''){
   if(checked.error||!checked.url||checked.rangeCheck?.status!=='passed'||checked.registerCheck?.status==='warning')throw Error(checked.error||checked.warning||'MIDI-Prüfung nicht bestanden.');
   checked.repair='Oktavlagen quellenbezogen korrigiert und MIDI erneut geprüft. Keine KI-Aufrufe, keine KI-Kosten.';
   await log(env,'korrektur',runId,{operation:'octave-repair',method:local.method,accepted:true,paidCalls:0,durationMs:Date.now()-started});
-  return {code:local.code,compiled:checked,cost:0};
+  return {code:checked.code||local.code,compiled:checked,cost:0};
  }catch(e){error=e.message;}
  await log(env,'korrektur',runId,{operation:'octave-repair',method:local?.method||'source-octave-repair',accepted:false,paidCalls:0,error,durationMs:Date.now()-started});
  return {code,compiled:{...compiled,repairFailed:true,warning:[compiled.warning,error,'Original erhalten. Kein KI-Korrekturaufruf gestartet.'].filter(Boolean).join('\n')},cost:0};
@@ -432,6 +453,7 @@ async function run(req,env){
   if(usage)usage.cost=(Number(usage.cost)||0)+titleCost;
   base.title=title;base.techout=code;base.costs.composition+=titleCost;
   let compiled=code?await compileLilyMidi(env,code,title,runId,task):{error:'Die KI lieferte keinen LilyPond-Code.'};
+  if(compiled.code){code=compiled.code;base.techout=code;}
   await log(env,'kompilierung',runId,{source:code,...compiled});
   if(compiled.rangeCheck?.instruments.some(x=>x.violations>0)||compiled.registerCheck?.status==='warning'){
    const repaired=await repairOctaves(env,code,title,runId,compiled,task);
