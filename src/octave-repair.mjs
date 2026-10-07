@@ -195,7 +195,10 @@ export function automaticOctaveRepair(source,instruments,registerIssues=[]){
     const segmentKeys=segments.map(seg=>seg.map(t=>midiKey(t.token,t.octave)));
     const anchorIndex=segmentKeys.findIndex(a=>a.every(k=>k>=low&&k<=high));
     if(anchorIndex>=0){
-     const anchorCenter=median(segmentKeys[anchorIndex]),chosen=[];let previousFirst=null,valid=true;
+     // The first playable bar may already contain an unintended octave
+     // marker. Use the declared relative reference for the target register.
+     const anchor=notes[0].anchor;
+     const anchorCenter=12*(Math.floor(anchor/7)+1)+[0,2,4,5,7,9,11][anchor%7],chosen=[];let previousFirst=null,valid=true;
      for(let i=0;i<segments.length;i++){
       const raw=segmentKeys[i],candidates=[];
       for(let shift=-24;shift<=24;shift++){

@@ -79,13 +79,13 @@ const duetFix=automaticOctaveRepair(duet,[{status:'checked',program:42,channel:0
 assert(automaticOctaveRepair("\\relative c' { << c4 e >> }",piano).error);assert(automaticOctaveRepair("c,,,,4",[{status:'unknown',low:null,high:null}]).error);
 console.log('PASS: app-only absolute/relative range correction, uniform interval preservation, cello/piano assignment and register correction; ambiguous/unsupported music fails explicitly.');
 const mozartDrift=String.raw`
-global = { \\key bes \\major \\time 4/4 }
-right = \\relative c'' {
-  \\global
+global = { \key bes \major \time 4/4 }
+right = \relative c'' {
+  \global
   bes4 d8 c bes4 a | g4 f8 g a4 bes | d4 c8 bes a4 g | f2 bes |
 }
-left = \\relative c {
-  \\global
+left = \relative c {
+  \global
   bes,4 f' d bes |
   es,4 bes' g es |
   f,4 c' a f |
@@ -111,7 +111,7 @@ left = \\relative c {
   c,4 g' es c |
   bes,1
 }
-\\score { \\new PianoStaff << \\new Staff \\with { midiInstrument = "acoustic grand" } { \\right } \\new Staff \\with { midiInstrument = "acoustic grand" } { \\left } >> \\layout {} \\midi {} }
+\score { \new PianoStaff << \new Staff \with { midiInstrument = "acoustic grand" } { \right } \new Staff \with { midiInstrument = "acoustic grand" } { \left } >> \layout {} \midi {} }
 `;
 const driftPlan=relativeOctavePlan(mozartDrift),driftLeft=driftPlan.filter(t=>t.block===1);
 assert(driftLeft.some(t=>midiKeyForTest(t.token,t.octave)<21),'fixture must reproduce the runaway low register');
