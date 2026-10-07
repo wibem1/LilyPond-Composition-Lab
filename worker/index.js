@@ -1,5 +1,5 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.29";
+const VERSION="0.1.30";
 import {compositionAttribution} from '../src/composition-attribution.mjs';
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
@@ -373,8 +373,10 @@ async function run(req,env){
   const max_tokens=Math.min(64000,Math.max(500,!requestedTokens||requestedTokens===8000?64000:requestedTokens));
   const messages=[{role:'system',content:system},{role:'user',content:task}];
   const compositionReasoning=b.compositionReasoning==='short'?'short':'default';
-  if(compositionReasoning==='short'&&max_tokens<=1024)throw Error('Für kurzes Denken bitte ein Tokenbudget von mindestens 1025 wählen. Kein KI-Aufruf gestartet.');
-  const reasoning=compositionReasoning==='short'?{max_tokens:Math.min(2048,max_tokens-1)}:null;
+  // Sonnet 5.5 uses adaptive thinking: steer effort instead of a legacy token budget.
+  const adaptiveSonnet=/^anthropic\/claude-sonnet-5\.5(?:$|[-:])/.test(model);
+  if(compositionReasoning==='short'&&!adaptiveSonnet&&max_tokens<=1024)throw Error('Für kurzes Denken bitte ein Tokenbudget von mindestens 1025 wählen. Kein KI-Aufruf gestartet.');
+  const reasoning=compositionReasoning==='short'?(adaptiveSonnet?{effort:'low'}:{max_tokens:Math.min(2048,max_tokens-1)}):null;
   const payload={model,messages,max_tokens,stream:false,usage:{include:true},...(reasoning?{reasoning}:{})};
   await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:reasoning||'provider_default'});
   const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify(payload)});

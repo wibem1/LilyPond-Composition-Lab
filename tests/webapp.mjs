@@ -32,7 +32,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.29'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.30'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -206,3 +206,22 @@ assert.equal(await (await call(attributed.downloads[0].url)).text(),attributed.a
 assert.equal(paid,attributionPaid+3); // composition and the existing two title attempts only
 reportedModel=undefined;namingDown=false;
 console.log('PASS: API-reported model is stored in source, composer, history, workspace and download; requested selector and raw answer remain available without extra attribution calls.');
+
+// Sonnet 5.5 must receive adaptive effort, not the ineffective legacy budget.
+namingDown=true;
+for(const [selection,runId] of [['short','abcd1111abcd3333'],['default','abcd1111abcd4444']]){
+ const at=requests.length;
+ const sonnet=await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',model:'anthropic/claude-sonnet-5.5',compositionReasoning:selection,runId}});
+ const request=requests[at];
+ if(selection==='short')assert.deepEqual(request.reasoning,{effort:'low'});
+ else assert(!('reasoning' in request));
+ assert.equal(request.max_tokens,24000);
+ assert.deepEqual(request.messages,[{role:'system',content:data.system},{role:'user',content:data.task}]);
+ assert.equal((await value('/api/history/'+sonnet.historyId)).entry.compositionReasoning,selection);
+ assert.equal((await value('/api/workspace')).workspace.compositionReasoning,selection);
+ const diag=await value('/api/diagnosis?runId='+runId);
+ const logged=diag.entries.find(e=>e.event==='anfrage'&&!e.operation);
+ assert.deepEqual(logged.reasoning_requested,selection==='short'?{effort:'low'}:'provider_default');
+}
+namingDown=false;
+console.log('PASS: Sonnet 5.5 short uses low effort; default omits reasoning control; prompts, total budget, saved choices and diagnostic request match.');

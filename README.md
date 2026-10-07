@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.29
+# LilyPond Composition Lab v0.1.30
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -142,3 +142,9 @@ Der aktive eigene Soundfont wird zusätzlich auf dem jeweiligen Gerät in CacheS
 ### v0.1.29 – verwendete KI im Kompositionscode
 
 Neue vollständige Kompositionen enthalten das Modell aus der API-Antwort (ersatzweise das angeforderte Modell) als KI-Modell-Kommentar und im Komponistenfeld aller Header. Die unveränderte Originalantwort bleibt im Diagnoseprotokoll erhalten. Verlauf, Arbeitsstand und LilyPond-Download übernehmen denselben gekennzeichneten Code; reine Neukompilierungen und importierte Dateien werden nicht umetikettiert. Kein zusätzlicher KI-Aufruf.
+
+### v0.1.30 – kurzes Denken bei Sonnet 5.5
+
+Die Diagnose e7bdcb78 zeigte 27.323 Denktokens trotz angefordertem 2.048-Token-Denkbudget. Für `anthropic/claude-sonnet-5.5` (einschließlich datierter/Router-Varianten) sendet „Kurz“ jetzt `reasoning.effort=low`, den dokumentierten Regler für adaptives Denken, statt des alten Tokenbudgets. „Modellvorgabe“ sendet weiterhin keine Denksteuerung. Andere Modelle behalten ihre bisherige Behandlung. Notenausgabebudget, Kompositionsauftrag und Systemprompt bleiben unverändert. Die Hilfe beschreibt die modellabhängige Steuerung; die Diagnose protokolliert den tatsächlich gesendeten Parameter. Simulierte Worker-Tests prüfen beide Sonnet-Einstellungen, unveränderte Prompts/Budgets und gespeicherte Auswahl. Es wurde kein kostenpflichtiger Vergleichslauf ausgeführt; Einsparung und musikalische Qualität müssen am nächsten echten Ergebnis verglichen werden.
+
+Grundlagen: https://platform.claude.com/docs/en/build-with-claude/effort und https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
