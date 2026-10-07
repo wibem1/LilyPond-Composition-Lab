@@ -1,4 +1,4 @@
-const VERSION="0.1.15";
+const VERSION="0.1.16";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';

@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.15
+# LilyPond Composition Lab v0.1.16
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -65,3 +65,5 @@ V0.1.15: Technische Oktavkorrektur beginnt mit kurzer Denkstufe low / 8000 Token
 Relative Einzelstimmen: KI liefert nur absolute Zieloktaven als Zahlenliste; die App berechnet die relativen Zeichen deterministisch einschließlich Akkordreferenzen. Beide Versuche verwenden hier low. Nicht unterstützte verschachtelte/gleichzeitige Konstruktionen behalten den bisherigen geprüften Reparaturpfad. Tatsächliche MIDI-Prüfung bleibt zwingend. Reale Diagnose 17d787: vier abgeschnittene medium-Antworten mit jeweils rund 23000 Denktokens und zusammen etwa neun Minuten; LilyPond selbst etwa vier Sekunden.
 
 Echter Test der absoluten Zieloktaven auf 17d787: komplette Reparatur in 26,8 Sekunden statt etwa 4½ Minuten; Kosten 0,0058575 USD, MIDI 256 Noten C1–D6, Dauer 93,912984 s. Nur Oktavzeichen geändert. Reale Zahlenantwort und korrigierte Quelle als Regression gespeichert.
+
+V0.1.16: Beim erfolgreichen Laden eines eigenen Soundfonts wird die Standardbank aus dem aktiven Synthesizer entfernt. Ein exakter GM-Treffer des Standards kann so keine eigenen Presets mit anderen Bank-/Programmnummern verdecken. Der Standard-Button lädt die Standardbank wieder; ungültige Dateien erhalten den bisherigen Klang, Ladefehler bleiben sichtbar. Während Dateieinlesen/Soundfont-Laden ist Start gesperrt, damit kein paralleler Standard-Ladevorgang ausgelöst wird.

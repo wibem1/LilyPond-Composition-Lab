@@ -68,7 +68,10 @@ export class SoundFontPlayer {
    else{
     const id='lab-user-'+crypto.randomUUID();await this._addBank(buffer,id);
     if(old)await this.synth.soundBankManager.deleteSoundBank(old);
-    this.synth.soundBankManager.priorityOrder=[id,'lab-default'];
+    // An exact GM match in the fallback bank otherwise masks custom presets
+    // with a different bank/program, even when the custom bank has priority.
+    await this.synth.soundBankManager.deleteSoundBank('lab-default');
+    this.synth.soundBankManager.priorityOrder=[id];
     // Ordered barrier: priority changes must finish before another bank operation starts.
     await this.synth.getSnapshot();this._customId=id;
    }

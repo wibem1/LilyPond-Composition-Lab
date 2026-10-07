@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import worker from '../worker/index.js';
-import {SoundBankLoader,SpessaSynthProcessor,SPESSA_BUFSIZE} from 'spessasynth_core';
+import {SoundBankLoader,BasicSoundBank,SpessaSynthProcessor,SPESSA_BUFSIZE} from 'spessasynth_core';
 const get=path=>worker.fetch(new Request('https://test.local'+path),{},{});
 const font=await (await get('/TimGM6mb.sf2')).arrayBuffer();
 const synth=new SpessaSynthProcessor(48000,{effectsEnabled:false});await synth.processorInitialized;
@@ -62,3 +62,16 @@ const html=await (await get('/style.css')).text();assert(html.includes('font-siz
 for(const asset of ['/spessasynth.mjs','/spessasynth-processor.js','/LICENSE-SYNTH.txt'])assert.equal((await get(asset)).status,200);
 globalThis.fetch=originalFetch;
 console.log('PASS: serialized font changes, corrupt font preserves playback, decoder failure recovers, transport pause/stop/seek, self-hosted audio assets and zoomable entry viewport.');
+
+// A non-GM custom bank must win over the exact GM piano in the standard bank.
+const customBank=SoundBankLoader.fromArrayBuffer(BasicSoundBank.getSampleSoundBankFile());
+customBank.presets[0].name='Selected custom saw';customBank.presets[0].bankMSB=4;customBank.presets[0].program=12;const distinct=customBank.writeSF2();
+const oldCore=new SpessaSynthProcessor(48000,{effectsEnabled:false});await oldCore.processorInitialized;
+oldCore.soundBankManager.addSoundBank(SoundBankLoader.fromArrayBuffer(font.slice(0)),'default');oldCore.soundBankManager.addSoundBank(SoundBankLoader.fromArrayBuffer(distinct.slice(0)),'custom');oldCore.soundBankManager.priorityOrder=['custom','default'];oldCore.programChange(0,0);assert.notEqual(oldCore.midiChannels[0].preset.name,'Selected custom saw');
+const realCore=new SpessaSynthProcessor(48000,{effectsEnabled:false});await realCore.processorInitialized;
+const realManager=realCore.soundBankManager;const audioPlayer=new SoundFontPlayer({validate:b=>SoundBankLoader.fromArrayBuffer(b).presets.length,createEngine:async()=>({ctx:{state:'running',resume:async()=>{}},master:{},synth:{eventHandler:new Events(),stopAll:()=>realCore.stopAllChannels(true),getSnapshot:async()=>{},soundBankManager:{get priorityOrder(){return realManager.priorityOrder},set priorityOrder(v){realManager.priorityOrder=v},async addSoundBank(b,id){realManager.addSoundBank(SoundBankLoader.fromArrayBuffer(b),id)},async deleteSoundBank(id){realManager.deleteSoundBank(id)}}},seq:{eventHandler:new Events(),currentTime:0,pause(){},play(){realCore.programChange(0,0)},loadNewSongList(){queueMicrotask(()=>this.eventHandler.emit('songChange'))}}})});
+globalThis.fetch=async()=>new Response(font.slice(0));audioPlayer.loadMidi(midi);await audioPlayer.loadSoundFontBuffer(distinct.slice(0),'Own font');await audioPlayer.play();assert.equal(realCore.midiChannels[0].preset.name,'Selected custom saw');assert.equal(realManager.priorityOrder.length,1);
+const pcm=core=>{core.noteOn(0,60,90);const data=[];for(let i=0;i<40;i++){const l=new Float32Array(SPESSA_BUFSIZE),r=new Float32Array(SPESSA_BUFSIZE);core.process(l,r);for(const v of l){assert(Number.isFinite(v));data.push(v)}}core.stopAllChannels(true);return data};
+const standardPCM=pcm(oldCore),customPCM=pcm(realCore);assert(customPCM.some(x=>Math.abs(x)>.0001));assert(standardPCM.some((v,i)=>Math.abs(v-customPCM[i])>.001));
+await audioPlayer.loadSoundFont('/TimGM6mb.sf2','TimGM6mb');await audioPlayer.play();assert.notEqual(realCore.midiChannels[0].preset.name,'Selected custom saw');assert.deepEqual(realManager.priorityOrder,['lab-default']);audioPlayer.stop();globalThis.fetch=originalFetch;
+console.log('PASS: old stack reproduces standard piano despite custom priority; shipped adapter selects the non-GM custom preset, produces different real PCM and switches back to standard.');
