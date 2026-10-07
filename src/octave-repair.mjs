@@ -147,25 +147,26 @@ export function automaticOctaveRepair(source,instruments,registerIssues=[]){
  }
  if(!plan.length)return {error:'Keine sicher auflösbaren Tonpositionen.'};
  const homogeneous=instruments.every(x=>x.low===instruments[0].low&&x.high===instruments[0].high&&x.program===instruments[0].program);
- const targets=plan.map(t=>t.octave);let changes=0;const methods=new Set();
- const movement=(notes,octaves)=>{
-  let total=0,previous=null,chordFirst=null,wasChord=false;
-  for(let i=0;i<notes.length;i++){
-   const t=notes[i];if(wasChord&&(!t.chord||t.chordFirst))previous=chordFirst;
-   const key=midiKey(t.token,octaves[i]);if(previous!==null)total+=Math.abs(key-previous);
-   if(t.chordFirst)chordFirst=key;previous=key;wasChord=t.chord;
-  }
-  return total;
- };
- const unmarkedRelativeOctaves=notes=>{
+ const targets=plan.map(t=>t.octave);let changes=0;const methods=new Set(),maskedSource=relative?musicMask(source):'';
+ const median=values=>{const a=[...values].sort((x,y)=>x-y),m=Math.floor(a.length/2);return a.length%2?a[m]:(a[m-1]+a[m])/2;};
+ const relativeSegments=notes=>{
   if(!notes.length||notes[0].anchor===null)return null;
-  let reference=notes[0].anchor,first=null,wasChord=false;const octaves=[];
-  for(const t of notes){
-   if(wasChord&&(!t.chord||t.chordFirst)){reference=first;first=null;}
-   const pitch=nearest(reference,degree(t.token));octaves.push(Math.floor(pitch/7));
-   if(t.chordFirst)first=pitch;reference=pitch;wasChord=t.chord;
+  const groups=[];let group=0,cursor=notes[0].blockStart+1,partialSplit=-1;
+  const firstBar=maskedSource.indexOf('|',cursor),prefix=maskedSource.slice(cursor,firstBar<0?notes.at(-1).end:firstBar);
+  const partial=prefix.match(/\\partial\s+(\d+)(\.*)/);
+  if(partial&&notes.length>1){
+   const duration=source.slice(notes[0].end,notes[1].start).match(/^\s*(\d+)(\.*)/);
+   if(duration&&duration[1]+duration[2]===partial[1]+partial[2])partialSplit=notes[1].start;
   }
-  return octaves;
+  for(let i=0;i<notes.length;i++){
+   const t=notes[i];
+   if(i){
+    const between=maskedSource.slice(cursor,t.start),bars=(between.match(/\|/g)||[]).length;
+    group+=bars;if(partialSplit===t.start&&!bars)group++;
+   }
+   (groups[group]??=[]).push(t);cursor=t.end;
+  }
+  return groups.filter(Boolean);
  };
  for(const block of [...new Set(plan.map(t=>t.block))]){
   const notes=plan.filter(t=>t.block===block);let profile=homogeneous?instruments[0]:null;
@@ -181,21 +182,42 @@ export function automaticOctaveRepair(source,instruments,registerIssues=[]){
   const keys=notes.map(t=>midiKey(t.token,t.octave)),outside=keys.filter(k=>k<low||k>high);
   if(!outside.length)continue;
 
-  // Frequent relative octave marks can create a cumulative octave drift:
-  // every comma/apostrophe is interpreted from the preceding pitch, not from
-  // the clef or the beginning of the bar.  For a clearly broken block, test
-  // the same pitch classes with LilyPond's normal nearest-note relative rule.
-  // Accept this source-level repair only when it fixes the whole block and
-  // markedly reduces the accumulated melodic jumping.
+  // Relative notation can drift by whole octaves across bar lines when an
+  // LLM writes commas/apostrophes as if every bar started from a fresh
+  // reference.  Preserve every interval inside each notated measure and move
+  // only complete measures by octaves.  This repairs the cause in the
+  // LilyPond source instead of clamping individual MIDI notes.
   if(relative&&notes[0].anchor!==null){
-   const alternative=unmarkedRelativeOctaves(notes);
-   const altKeys=alternative?.map((o,i)=>midiKey(notes[i].token,o))||[];
-   const explicitMarks=notes.filter(t=>marks(t.token)!==0).length;
+   const segments=relativeSegments(notes),explicitMarks=notes.filter(t=>marks(t.token)!==0).length;
    const extreme=keys.some(k=>k<low-12||k>high+12);
-   const enoughEvidence=outside.length>=2&&(explicitMarks>=2)&&(extreme||outside.length>=Math.ceil(notes.length/4));
-   if(enoughEvidence&&altKeys.length===notes.length&&altKeys.every(k=>k>=low&&k<=high)&&movement(notes,alternative)+12<movement(notes,notes.map(t=>t.octave))){
-    for(let i=0;i<notes.length;i++){const t=notes[i],target=alternative[i];targets[t.id]=target;if(target!==t.octave)changes++;}
-    methods.add('relative-marker-drift');continue;
+   const enoughEvidence=segments?.length>=3&&outside.length>=2&&explicitMarks>=2&&(extreme||outside.length>=Math.ceil(notes.length/4));
+   if(enoughEvidence){
+    const segmentKeys=segments.map(seg=>seg.map(t=>midiKey(t.token,t.octave)));
+    const anchorIndex=segmentKeys.findIndex(a=>a.every(k=>k>=low&&k<=high));
+    if(anchorIndex>=0){
+     const anchorCenter=median(segmentKeys[anchorIndex]),chosen=[];let previousFirst=null,valid=true;
+     for(let i=0;i<segments.length;i++){
+      const raw=segmentKeys[i],candidates=[];
+      for(let shift=-24;shift<=24;shift++){
+       const shifted=raw.map(k=>k+12*shift);
+       if(shifted.every(k=>k>=low&&k<=high)){
+        const cost=Math.abs(median(shifted)-anchorCenter)+(previousFirst===null?0:0.25*Math.abs(shifted[0]-previousFirst))+0.05*Math.abs(shift)*12;
+        candidates.push({shift,shifted,cost});
+       }
+      }
+      if(!candidates.length){valid=false;break;}
+      candidates.sort((a,b)=>a.cost-b.cost||Math.abs(a.shift)-Math.abs(b.shift));
+      const best=candidates[0];chosen.push(best);previousFirst=best.shifted[0];
+     }
+     if(valid){
+      const beforeCenters=segmentKeys.map(median),afterCenters=chosen.map(x=>median(x.shifted));
+      const beforeSpread=Math.max(...beforeCenters)-Math.min(...beforeCenters),afterSpread=Math.max(...afterCenters)-Math.min(...afterCenters);
+      if(afterSpread+12<beforeSpread){
+       for(let i=0;i<segments.length;i++)for(const t of segments[i]){const target=t.octave+chosen[i].shift;targets[t.id]=target;if(target!==t.octave)changes++;}
+       methods.add('relative-measure-drift');continue;
+      }
+     }
+    }
    }
   }
 
