@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
-import {automaticOttava,sameMidiPerformance} from '../src/automatic-ottava.mjs';
+import {automaticOttava,sameMidiPerformance,removeGeneratedOttava} from '../src/automatic-ottava.mjs';
 const score=(music,clef='treble',mode='')=>`voiceMusic = ${mode}{ \\clef ${clef} ${music} }\n\\score { \\new PianoStaff << \\new Staff \\voiceMusic >> \\layout {} \\midi {} }`;
 const strip=s=>s.replace(/\\ottava #(?:-?\d+)\s*/g,'').replace(/\s+/g,'');
-const notes="g'''4 a''' b''' c'''' | c''4 d'' e'' f'' | g'''4 a''' b''' c'''' |";
+const notes="g'''4 a''' b''' c'''' | c'''4 d''' e''' f''' | g'''4 a''' b''' c'''' |";
 const original=score(notes),high=automaticOttava(original);
 assert.equal(high.passages.length,1);assert.equal(high.passages[0].octaves,1);
 assert.equal((high.code.match(/\\ottava #1/g)||[]).length,1);
 assert.equal((high.code.match(/\\ottava #0/g)||[]).length,1);
 assert.equal(strip(high.code),strip(original));
-// Moderate dips and rests never cause repeated starts/stops.
-const rest=automaticOttava(score("g'''4 a''' b''' c'''' | r1 | g'''4 a''' b''' c'''' |"));
+// High-register dips and short rests stay inside a continuous line.
+const rest=automaticOttava(score("g'''4 a''' b''' c'''' | r8 g'''8 a'''4 b''' c'''' | g'''4 a''' b''' c'''' |"));
 assert.equal(rest.passages.length,1);
 const jumping=automaticOttava(score("g'''4 a''' b''' c'''' | g'''4 a''' b''' c'''' | c'1 | g'''4 a''' b''' c'''' | g'''4 a''' b''' c'''' |"));
 assert.equal(jumping.passages.length,0);
@@ -32,3 +32,13 @@ assert(sameMidiPerformance(midi,structuredClone(midi)));
 for(const key of ['key','vel','tick','sec','ch']){const altered=structuredClone(midi);altered.events[0][key]++;assert(!sameMidiPerformance(midi,altered));}
 assert(!sameMidiPerformance(midi,{...midi,ppq:960}));
 console.log('PASS: continuous measure passages across dips/rests, 8va/8vb/15ma, chords, relative/absolute notes, unchanged source pitches, singleton/wide-chord/author/unsupported exclusions and strict MIDI event comparison.');
+const ordinaryDip=score("g'''4 a''' b''' c'''' | c''4 d'' e'' f'' | g'''4 a''' b''' c'''' |");
+assert.equal(automaticOttava(ordinaryDip).passages.length,0);
+assert.equal(automaticOttava(score("g'''4 a''' b''' c'''' | g'''4 a''' b''' c'''' | r1 | g'''4 a''' b''' c'''' | g'''4 a''' b''' c'''' |")).passages.length,0);
+const entry={source:high.code,ottava:{status:'applied',midiUnchanged:true}};
+assert.equal(strip(removeGeneratedOttava(high.code,[entry])),strip(original));
+assert.equal(removeGeneratedOttava(high.code,[]),high.code);
+assert.equal(removeGeneratedOttava(high.code+' % author edit',[entry]),high.code+' % author edit');
+const trailing=automaticOttava(score("g'''4 a''' b''' c'''' | g'''4 a''' b''' r4 |"));
+assert(trailing.code.includes('\\ottava #0 r4'));
+console.log('PASS: ordinary register and long rests never extend an octave line; handwritten or edited notation stays untouched.');

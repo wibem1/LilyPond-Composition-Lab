@@ -33,7 +33,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.33'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.34'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -269,3 +269,15 @@ for(const mode of ['same','different','error']){
 }
 assert.equal(paid,notationPaid);ottavaTest='same';
 console.log('PASS: ottava render accepted only for identical MIDI; changed playback and compiler failure preserve original score/MIDI; no AI calls.');
+const mixedPiano=highPiano.replace("g'''4", "c''4 d'' e'' f'' | g'''4");
+const oldAutomatic=mixedPiano.replace("c''4", "\\ottava #1 c''4").replace('| }', '| \\ottava #0 }');
+const migrationRun='abcd3333abcd4444';
+await env.BUCKET.put('logs/'+migrationRun+'/old.json',JSON.stringify({version:'0.1.33',event:'kompilierung',source:mixedPiano,code:oldAutomatic,ottava:{status:'applied',midiUnchanged:true}}));
+const migrated=await value('/api/compile-lilypond',{method:'POST',data:{code:oldAutomatic,runId:migrationRun}});
+assert(migrated.code.includes("c''4 d'' e'' f'' | \\ottava #1 g'''4"));
+assert.equal(withoutOttava(migrated.code),withoutOttava(mixedPiano));
+const authorSource=oldAutomatic+' % handwritten change';
+const authorResult=await value('/api/compile-lilypond',{method:'POST',data:{code:authorSource,runId:migrationRun}});
+assert.equal(authorResult.code,undefined);assert.equal(authorResult.ottava.status,'unchanged');
+assert.equal(paid,notationPaid);
+console.log('PASS: recompile replaces a logged v0.1.33 line across ordinary register and preserves edited/handwritten octave lines, without AI calls.');

@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.33
+# LilyPond Composition Lab v0.1.34
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -164,3 +164,11 @@ Bei erkanntem Klaviersatz werden sequenzielle benannte Stimmen mit eindeutigem V
 Vor der Übernahme rendert der Worker beide Fassungen und vergleicht alle geparsten MIDI-Ereignisse, PPQ und Dauer: Tonhöhen, Anschläge, Notenenden, Dynamik/Velocity, Tempo, Pedal und andere Controller müssen identisch bleiben. Bei Abweichung oder Compilerfehler bleiben ursprüngliche Noten und MIDI erhalten. Tatsächliche Oktavfehler werden vorher durch die vorhandene Korrektur behandelt. Die optimierte Quelle wird für Editor, Verlauf und LilyPond-Download übernommen. Bestehende Stücke übernehmen die Lesehilfe mit „Neu kompilieren“. Kein zusätzlicher KI-Aufruf; nur bei einer geplanten Verbesserung ist ein weiterer Compilerlauf nötig. Diagnose enthält die Passagen und die MIDI-Prüfung. Tests: absolute/relative Quellen, Akkorde, Pausen/Registerdips, Ausschluss kurzer Wechsel und Einzelspitzen, Quellenintegrität, bestehende Oktavkorrektur sowie Übernahme/Ablehnung über die tatsächliche Worker-Route mit simuliertem Renderer. Ein neuer Live-Renderer-Test wurde nicht ausgeführt.
 
 Grundlagen: https://lilypond.org/doc/v2.24/Documentation/notation/displaying-pitches#ottava-brackets und https://www.behindbarsnotation.co.uk/contents/sample_pages.pdf
+
+### v0.1.34 – Oktavlinien auf das extreme Register begrenzen
+
+Fehler in v0.1.33: Die Optimierung der gesamten Hilfslinienzahl erlaubte eine Linie durch normal lesbare Register; beim gemeldeten Stück begann sie dadurch bereits in Takt 11. Diese Regel wurde ersetzt. Jeder enthaltene Ton muss durch die Oktavierung weniger Hilfslinien erhalten. Keine Ausdehnung in die Mittellage zur Vermeidung von Wechseln. Ganze Pausentakte unterbrechen die Kandidaten; halbe/ganze Pausen und komplexe Pausendauern werden konservativ ausgeschlossen. Bei kurzen Abständen zwischen Kandidaten wird die Stimme weiterhin nicht automatisch oktaviert. Die Schwellen und Mindestlängen sind konservative Softwareentscheidungen, keine behauptete universelle Notationsnorm.
+
+Beim erneuten Kompilieren wird eine bereits eingefügte automatische Linie nur dann entfernt und neu beurteilt, wenn das Protokoll exakt denselben uneditierten Code und die erfolgreiche automatische MIDI-Prüfung nachweist. Manuell gesetzte oder anschließend bearbeitete Oktavlinien bleiben erhalten. Quelle: Gerou/Lusk, Essential Dictionary of Music Notation, Abschnitt Octave signs, Seiten 97–101 (https://musescore.org/sites/musescore.org/files/2022-02/EssentialDictionaryOfMusicNotation_0.pdf). Die Linie dient der Vermeidung zahlreicher Hilfslinien, beginnt an der ersten betroffenen Note und überbrückt lediglich kurze Pausen.
+
+Lokale Prüfung des gemeldeten korrigierten Quelltexts: statt Takt 11–24 nur Takt 20–24. Kein neuer Live-Renderer-/Android-Sichttest; die MIDI-Identitätsprüfung vor Übernahme bleibt aktiv.

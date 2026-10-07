@@ -6,7 +6,8 @@ function close(s,start){let depth=0;for(let i=start;i<s.length;i++){if(s[i]==='{
 const ledger=(pitch,clef)=>Math.floor(Math.max(0,(clef==='treble'?30:18)-pitch,pitch-(clef==='treble'?38:26))/2);
 
 // Conservative piano notation only. Add display commands, never edit pitches.
-// Whole compatible runs of measures stay under one line, including register dips.
+// Restrict lines to an extreme register where every pitch becomes easier to read.
+// Do not obtain continuity by extending into ordinary register.
 export function automaticOttava(source){
  let s=mask(source);
  const unchanged=reason=>({code:source,passages:[],reason});
@@ -49,7 +50,7 @@ export function automaticOttava(source){
     else {inChord=false;event=null;}
    }
    if(!inChord){event={start:n.start,pitches:[]};events.push(event);}
-   event.pitches.push(n.octave*7+degree(n.token));cursor=n.end;
+   event.pitches.push(n.octave*7+degree(n.token));event.end=n.end;cursor=n.end;
   }
   for(const e of events){const measure=measures.find(b=>e.start>=b.start&&e.start<b.end);if(measure)measure.events.push(e);}
   const direction=clef==='treble'?1:-1;
@@ -57,7 +58,7 @@ export function automaticOttava(source){
   // One choice per run. Never alternate 8va/15ma inside the same passage.
   const used=new Set();
   for(const amount of [direction,2*direction]){
-   const usable=b=>b.events.every(e=>e.pitches.every(p=>ledger(p-amount*7,clef)<=3));
+   const usable=b=>b.events.length>0&&b.events.every(e=>e.pitches.every(p=>ledger(p-amount*7,clef)<=3&&ledger(p-amount*7,clef)<ledger(p,clef)));
    for(let i=0;i<measures.length;){
     if(used.has(i)||!usable(measures[i])){i++;continue;}
     const first=i;while(i<measures.length&&!used.has(i)&&usable(measures[i]))i++;
@@ -66,7 +67,11 @@ export function automaticOttava(source){
     const before=pitches.reduce((n,p)=>n+ledger(p,clef),0),after=pitches.reduce((n,p)=>n+ledger(p-amount*7,clef),0);
     const occupied=run.filter(b=>b.events.length);
     if(!trigger||occupied.length<2||run.reduce((n,b)=>n+b.events.length,0)<3||after>=before)continue;
-    const start=occupied[0].events[0].start,stop=occupied.at(-1).end;
+    // Without duration/phrase parsing, do not cross large or trailing rests.
+    if(run.some(b=>/\b[rRs]\s*(?:1|2|\\breve|\\longa)|\b[rRs][0-9]*\s*\*/.test(s.slice(b.start,b.end))))continue;
+    const finalMeasure=occupied.at(-1),finalEvent=finalMeasure.events.at(-1);
+    const trailingRest=s.slice(finalEvent.end,finalMeasure.end).match(/\b[rRs](?=\d|\s|[|}])/);
+    const start=occupied[0].events[0].start,stop=trailingRest?finalEvent.end+trailingRest.index:finalMeasure.end;
     edits.push({at:start,text:`\\ottava #${amount} `},{at:stop,text:' \\ottava #0 '});
     passages.push({voice:name,clef,octaves:amount,firstMeasure:first+1,lastMeasure:last+1});
     for(let j=first;j<=last;j++)used.add(j);
@@ -87,4 +92,11 @@ export function automaticOttava(source){
 export function sameMidiPerformance(a,b){
  const canonical=m=>JSON.stringify({ppq:m.ppq,duration:m.duration,events:m.events});
  return canonical(a)===canonical(b);
+}
+
+// Revisit only notation whose automatic provenance is recorded for this run.
+// A handwritten ottava or an edited source must remain untouched.
+export function removeGeneratedOttava(source,entries){
+ const known=entries.some(e=>e&&e.ottava?.status==='applied'&&e.ottava?.midiUnchanged===true&&(e.code===source||e.source===source));
+ return known?source.replace(/\\ottava #-?\d+\s*/g,''):source;
 }

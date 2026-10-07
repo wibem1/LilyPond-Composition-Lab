@@ -1,5 +1,5 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.33";
+const VERSION="0.1.34";
 import {compositionAttribution} from '../src/composition-attribution.mjs';
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
@@ -7,7 +7,7 @@ import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
 import {automaticOctaveRepair,legacyOctaveOriginal} from '../src/octave-repair.mjs';
 import {soundfontUpload} from '../src/soundfont-upload.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
-import {automaticOttava,sameMidiPerformance} from '../src/automatic-ottava.mjs';
+import {automaticOttava,sameMidiPerformance,removeGeneratedOttava} from '../src/automatic-ottava.mjs';
 import {expressionPlayback} from '../src/expression-playback.mjs';
 import {streamRun,readRunSession,noteRunProgress} from '../src/run-session.mjs';
 const randomUUID=()=>crypto.randomUUID();
@@ -320,9 +320,11 @@ async function handle(req,env,ctx){
  }
  if(req.method==='GET'&&p==='/api/midi-status'){try{await rendererReady();return json({lilypondInstalled:true,soundfont:'TimGM6mb.sf2',conversion:'LilyPond über Hacklily; MIDI-CSV in der WebApp'})}catch{return json({lilypondInstalled:false})}}
  if(req.method==='POST'&&p==='/api/compile-lilypond'){
-  const b=await body(req),code=clean(b.code),runId=safe(b.runId||randomUUID());if(!code.trim())return json({error:'Kein LilyPond-Code vorhanden.'},400);
+  const b=await body(req),submittedCode=clean(b.code),runId=safe(b.runId||randomUUID());let code=submittedCode;if(!code.trim())return json({error:'Kein LilyPond-Code vorhanden.'},400);
   const objects=await listAll(env,'logs/'+runId+'/');
-  const original=legacyOctaveOriginal(code,await Promise.all(objects.map(o=>getJson(env,o.key))));
+  const entries=await Promise.all(objects.map(o=>getJson(env,o.key)));
+  code=removeGeneratedOttava(code,entries);
+  const original=legacyOctaveOriginal(code,entries);
   if(original){
    const initial=await compileLilyMidi(env,original,compositionFilename(b.title),runId,clean(b.task));
    const recovered=await repairOctaves(env,original,compositionFilename(b.title),runId,initial,clean(b.task));
@@ -331,7 +333,7 @@ async function handle(req,env,ctx){
     return json({...recovered.compiled,code:recovered.code,repair:'Alte Einzeltonkorrektur aus dem protokollierten Original ersetzt. '+recovered.compiled.repair});
    }
   }
-  let result=await compileLilyMidi(env,code,compositionFilename(b.title),runId,clean(b.task));await log(env,'kompilierung',runId,{source:code,title:compositionFilename(b.title),...result});if(result.rangeCheck?.instruments.some(x=>x.violations>0)||result.registerCheck?.status==='warning'){const fixed=await repairOctaves(env,code,compositionFilename(b.title),runId,result,clean(b.task));result={...fixed.compiled,code:fixed.code};}return json(result,result.error?422:200);
+  let result=await compileLilyMidi(env,code,compositionFilename(b.title),runId,clean(b.task));await log(env,'kompilierung',runId,{source:code,title:compositionFilename(b.title),...result});if(result.rangeCheck?.instruments.some(x=>x.violations>0)||result.registerCheck?.status==='warning'){const fixed=await repairOctaves(env,code,compositionFilename(b.title),runId,result,clean(b.task));result={...fixed.compiled,code:fixed.code};}if(code!==submittedCode&&!result.error&&!result.code)result.code=code;return json(result,result.error?422:200);
  }
  if(req.method==='POST'&&p==='/api/repair-octaves'){
   const b=await body(req),code=clean(b.code),task=clean(b.task),title=compositionFilename(b.title),runId=safe(b.runId||randomUUID());
