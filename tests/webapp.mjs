@@ -31,7 +31,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.24'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.25'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -159,3 +159,21 @@ const unknownEntry=await value('/api/history',{method:'POST',data:{title:'Unknow
 assert.equal((await value('/api/history/'+unknownEntry.entry.id)).entry.costs,null);
 assert((await (await call('/composition-costs.mjs')).text()).includes('costLabel'));
 console.log('PASS: history/list/reload preserve individual costs; metadata compatibility and unknown history costs verified.');
+
+const legacyLogs=JSON.parse(await readFile(new URL('./fixtures/legacy-mozart-octaves.json',import.meta.url),'utf8'));
+const legacyRun='bb0011223344556677';
+for(const [i,e] of legacyLogs.entries())await env.BUCKET.put('logs/'+legacyRun+'/'+i+'.json',JSON.stringify(e));
+const legacyCode=legacyLogs.find(e=>e.event==='korrekturpruefung').source;
+const originalCode=legacyLogs.find(e=>e.event==='kompilierung').source;
+const {automaticOctaveRepair}=await import('../src/octave-repair.mjs');
+const expectedFix=automaticOctaveRepair(originalCode,legacyLogs[0].rangeCheck.instruments);
+localRepairSource=expectedFix.code.split('left =')[1].split('dynamics =')[0];
+localRepairMidi=(await readFile(new URL('./fixtures/anchorless-corrected.mid',import.meta.url))).toString('base64');rendererMidi=driftMidi;
+const paidBeforeLegacy=paid;
+const restored=await value('/api/compile-lilypond',{method:'POST',data:{code:legacyCode,runId:legacyRun}});
+assert.equal(restored.code,expectedFix.code);assert.equal(restored.rangeCheck.status,'passed');assert(restored.repair.includes('protokollierten Original'));assert.equal(paid,paidBeforeLegacy);
+localRepairSource=null;rendererMidi=null;
+const editedLegacy=legacyCode.replace('bes4 f d bes','bes4 f d a');
+const editedResult=await value('/api/compile-lilypond',{method:'POST',data:{code:editedLegacy,runId:legacyRun}});
+assert.equal(editedResult.code,undefined);assert.equal(paid,paidBeforeLegacy);
+console.log('PASS: recompile route restores the exact legacy Mozart source, returns matching updated score/MIDI/code, costs no AI calls and preserves user edits.');

@@ -1,0 +1,158 @@
+[
+  {
+    "date": "2026-10-07T09:48:42.022Z",
+    "app": "LilyPond Composition Lab",
+    "version": "0.1.23",
+    "event": "kompilierung",
+    "source": "\\version \"2.24.3\"\n\n\\header {\n  title = \"Klavierstück in B-Dur\"\n  subtitle = \"im Stil Mozarts\"\n  composer = \"ChatGPT\"\n  tagline = \"\"\n}\n\nglobal = {\n  \\key bes \\major\n  \\time 4/4\n  \\tempo \"Allegretto grazioso\" 4 = 120\n}\n\nright = \\relative c'' {\n  \\global\n  \\partial 4 f4\\p\n\n  % 1–8\n  bes4( d8 c bes4 a) |\n  g4( f8 g a4 bes) |\n  d4( c8 bes a4 g) |\n  f2( bes4) r4 |\n  d4( c8 bes a4 g) |\n  f4( g8 a bes4 c) |\n  d4( c8 bes a4 bes) |\n  g2( f4) r4 |\n\n  % 9–16\n  f4( a8 g f4 es) |\n  d4( c8 d es4 f) |\n  g4( f8 es d4 c) |\n  bes2( d4) r4 |\n  es4( g8 f es4 d) |\n  c4( bes8 c d4 es) |\n  f4( es8 d c4 d) |\n  bes2( a4) r4 |\n\n  % 17–24\n  d8( es f g) a4( bes) |\n  f8( g a bes) c4( d) |\n  bes8( a g f) es4( d) |\n  c2\\trill bes4 r4 |\n  d8( es f g) a4( bes) |\n  c8( bes a g) f4( es) |\n  d4( c8 bes a4 bes) |\n  bes1\\fermata\n}\n\nleft = \\relative c {\n  \\global\n  \\partial 4 bes4\\p\n\n  % 1–8\n  bes,4 f' d bes |\n  es,4 bes' g es |\n  f,4 c' a f |\n  bes,4 f' d bes |\n  g,4 d' bes g |\n  c,4 g' es c |\n  f,4 c' a f |\n  bes,4 f' d bes |\n\n  % 9–16\n  bes,4 f' d bes |\n  es,4 bes' g es |\n  f,4 c' a f |\n  bes,4 f' d bes |\n  es,4 bes' g es |\n  a,4 e' cis a |\n  d,4 a' f d |\n  g,4 d' bes g |\n\n  % 17–24\n  c,4 g' es c |\n  f,4 c' a f |\n  bes,4 f' d bes |\n  es,4 bes' g es |\n  f,4 c' a f |\n  g,4 d' bes g |\n  c,4 g' es c |\n  bes,1\\fermata\n}\n\ndynamics = {\n  s4\\p\n  s1*3\n  s1\\< \n  s1\n  s1\\!\n  s1\\mf\n  s1\n  s1\n  s1\\p\n  s1\n  s1\\< \n  s1\n  s1\\!\n  s1\\mf\n  s1\n  s1\n  s1\\<\n  s1\n  s1\n  s1\\!\n  s1\\f\n  s1\n  s1\n  s1\\>\n  s1\\p\n}\n\npedal = {\n  s4\n  s1*7\n  s1\\sustainOn\n  s1\n  s1\\sustainOff\n  s1*5\n  s1\\sustainOn\n  s1\n  s1\\sustainOff\n  s1*4\n  s1\\sustainOn\n  s1\n  s1\\sustainOff\n  s1*2\n}\n\n\\score {\n  \\new PianoStaff <<\n    \\new Staff = \"RH\" \\with { midiInstrument = \"acoustic grand\" } { \\clef treble \\right }\n    \\new Dynamics { \\dynamics }\n    \\new Staff = \"LH\" \\with { midiInstrument = \"acoustic grand\" } { \\clef bass \\left }\n    \\new Dynamics { \\pedal }\n  >>\n  \\layout { }\n  \\midi { }\n}",
+    "url": "/download/Klavierst%C3%BCck%20in%20B-Dur-226271ac.mid",
+    "label": "MIDI-Datei",
+    "pages": [
+      {
+        "label": "Notenseite 1",
+        "url": "/download/Klavierst%C3%BCck%20in%20B-Dur-Seite-1-5a4d7c32.svg"
+      },
+      {
+        "label": "Notenseite 2",
+        "url": "/download/Klavierst%C3%BCck%20in%20B-Dur-Seite-2-9e421336.svg"
+      }
+    ],
+    "logs": "GNU LilyPond Server 2.26.0\nProcessing `/tmp/lyp/wrappers/hacklily.ly'\nParsing...\nInterpreting music...[8][16][24]\nPreprocessing graphical objects...\nInterpreting music...\nMIDI output to `hacklily.midi'...\nFinding the ideal number of pages...\nFitting music on 1 or 2 pages...\nDrawing systems...\nLayout output to `hacklily-1.svg'...\nLayout output to `hacklily-2.svg'...\nLayout output to `hacklily.pdf'...",
+    "warning": "Tonumfang prüfen: Klavier: 82 Töne außerhalb des hinterlegten Bereichs A0–C8; z. B. F0 bei 4.5 s, F0 bei 6 s, B-1 bei 6.5 s.",
+    "rangeCheck": {
+      "status": "warning",
+      "instruments": [
+        {
+          "channel": 0,
+          "program": 0,
+          "name": "Klavier",
+          "low": 21,
+          "high": 108,
+          "status": "checked",
+          "notes": 115,
+          "violations": 0,
+          "examples": []
+        },
+        {
+          "channel": 1,
+          "program": 0,
+          "name": "Klavier",
+          "low": 21,
+          "high": 108,
+          "status": "checked",
+          "notes": 94,
+          "violations": 82,
+          "examples": [
+            {
+              "pitch": "F0",
+              "key": 17,
+              "seconds": 4.5
+            },
+            {
+              "pitch": "F0",
+              "key": 17,
+              "seconds": 6
+            },
+            {
+              "pitch": "B-1",
+              "key": 10,
+              "seconds": 6.5
+            }
+          ]
+        }
+      ],
+      "warning": "Tonumfang prüfen: Klavier: 82 Töne außerhalb des hinterlegten Bereichs A0–C8; z. B. F0 bei 4.5 s, F0 bei 6 s, B-1 bei 6.5 s."
+    },
+    "registerCheck": {
+      "status": "passed",
+      "warning": "",
+      "issues": []
+    },
+    "expressionPlayback": {
+      "mode": "articulate",
+      "scores": 1,
+      "trillPolicy": "musical-v2",
+      "arpeggioPolicy": "rolled-chord-v1",
+      "error": ""
+    },
+    "instrumentLabels": "first-system-only",
+    "addedMidiBlock": 0,
+    "durationMs": 2332
+  },
+  {
+    "date": "2026-10-07T09:48:44.150Z",
+    "app": "LilyPond Composition Lab",
+    "version": "0.1.23",
+    "event": "korrekturpruefung",
+    "operation": "octave-repair",
+    "method": "mechanical-instrument-range",
+    "paidCalls": 0,
+    "notes": 201,
+    "changes": 83,
+    "source": "\\version \"2.24.3\"\n\n\\header {\n  title = \"Klavierstück in B-Dur\"\n  subtitle = \"im Stil Mozarts\"\n  composer = \"ChatGPT\"\n  tagline = \"\"\n}\n\nglobal = {\n  \\key bes \\major\n  \\time 4/4\n  \\tempo \"Allegretto grazioso\" 4 = 120\n}\n\nright = \\relative c'' {\n  \\global\n  \\partial 4 f4\\p\n\n  % 1–8\n  bes4( d8 c bes4 a) |\n  g4( f8 g a4 bes) |\n  d4( c8 bes a4 g) |\n  f2( bes4) r4 |\n  d4( c8 bes a4 g) |\n  f4( g8 a bes4 c) |\n  d4( c8 bes a4 bes) |\n  g2( f4) r4 |\n\n  % 9–16\n  f4( a8 g f4 es) |\n  d4( c8 d es4 f) |\n  g4( f8 es d4 c) |\n  bes2( d4) r4 |\n  es4( g8 f es4 d) |\n  c4( bes8 c d4 es) |\n  f4( es8 d c4 d) |\n  bes2( a4) r4 |\n\n  % 17–24\n  d8( es f g) a4( bes) |\n  f8( g a bes) c4( d) |\n  bes8( a g f) es4( d) |\n  c2\\trill bes4 r4 |\n  d8( es f g) a4( bes) |\n  c8( bes a g) f4( es) |\n  d4( c8 bes a4 bes) |\n  bes1\\fermata\n}\n\nleft = \\relative c {\n  \\global\n  \\partial 4 bes4\\p\n\n  % 1–8\n  bes,4 f' d bes |\n  es,4 bes' g es |\n  f4 c a f' |\n  bes4 f d bes |\n  g'4 d bes g' |\n  c4 g es c |\n  f4 c a f' |\n  bes4 f d bes |\n\n  % 9–16\n  bes4 f' d bes |\n  es4 bes g' es |\n  f4 c a f' |\n  bes4 f d bes |\n  es4 bes g' es |\n  a,4 e' cis a |\n  d4 a f' d |\n  g4 d bes g' |\n\n  % 17–24\n  c4 g es c |\n  f4 c a f' |\n  bes4 f d bes |\n  es4 bes g' es |\n  f4 c a f' |\n  g4 d bes g' |\n  c4 g es c |\n  bes1\\fermata\n}\n\ndynamics = {\n  s4\\p\n  s1*3\n  s1\\< \n  s1\n  s1\\!\n  s1\\mf\n  s1\n  s1\n  s1\\p\n  s1\n  s1\\< \n  s1\n  s1\\!\n  s1\\mf\n  s1\n  s1\n  s1\\<\n  s1\n  s1\n  s1\\!\n  s1\\f\n  s1\n  s1\n  s1\\>\n  s1\\p\n}\n\npedal = {\n  s4\n  s1*7\n  s1\\sustainOn\n  s1\n  s1\\sustainOff\n  s1*5\n  s1\\sustainOn\n  s1\n  s1\\sustainOff\n  s1*4\n  s1\\sustainOn\n  s1\n  s1\\sustainOff\n  s1*2\n}\n\n\\score {\n  \\new PianoStaff <<\n    \\new Staff = \"RH\" \\with { midiInstrument = \"acoustic grand\" } { \\clef treble \\right }\n    \\new Dynamics { \\dynamics }\n    \\new Staff = \"LH\" \\with { midiInstrument = \"acoustic grand\" } { \\clef bass \\left }\n    \\new Dynamics { \\pedal }\n  >>\n  \\layout { }\n  \\midi { }\n}",
+    "url": "/download/Klavierst%C3%BCck%20in%20B-Dur-e5dd4faa.mid",
+    "label": "MIDI-Datei",
+    "pages": [
+      {
+        "label": "Notenseite 1",
+        "url": "/download/Klavierst%C3%BCck%20in%20B-Dur-Seite-1-1f39b54d.svg"
+      }
+    ],
+    "logs": "GNU LilyPond Server 2.26.0\nProcessing `/tmp/lyp/wrappers/hacklily.ly'\nParsing...\nInterpreting music...[8][16][24]\nPreprocessing graphical objects...\nInterpreting music...\nMIDI output to `hacklily.midi'...\nFinding the ideal number of pages...\nFitting music on 1 page...\nDrawing systems...\nLayout output to `hacklily.svg'...\nLayout output to `hacklily.pdf'...",
+    "warning": "",
+    "rangeCheck": {
+      "status": "passed",
+      "instruments": [
+        {
+          "channel": 0,
+          "program": 0,
+          "name": "Klavier",
+          "low": 21,
+          "high": 108,
+          "status": "checked",
+          "notes": 115,
+          "violations": 0,
+          "examples": []
+        },
+        {
+          "channel": 1,
+          "program": 0,
+          "name": "Klavier",
+          "low": 21,
+          "high": 108,
+          "status": "checked",
+          "notes": 94,
+          "violations": 0,
+          "examples": []
+        }
+      ],
+      "warning": ""
+    },
+    "registerCheck": {
+      "status": "passed",
+      "warning": "",
+      "issues": []
+    },
+    "expressionPlayback": {
+      "mode": "articulate",
+      "scores": 1,
+      "trillPolicy": "musical-v2",
+      "arpeggioPolicy": "rolled-chord-v1",
+      "error": ""
+    },
+    "instrumentLabels": "first-system-only",
+    "addedMidiBlock": 0,
+    "durationMs": 1809
+  },
+  {
+    "date": "2026-10-07T09:48:44.464Z",
+    "app": "LilyPond Composition Lab",
+    "version": "0.1.23",
+    "event": "korrektur",
+    "operation": "octave-repair",
+    "method": "mechanical-instrument-range",
+    "accepted": true,
+    "paidCalls": 0,
+    "durationMs": 2123
+  }
+]

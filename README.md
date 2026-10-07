@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.24
+# LilyPond Composition Lab v0.1.25
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -120,3 +120,7 @@ Die [Ausdrucksprüfung](docs/expression-audit.md) dokumentiert getestete Funktio
 ### v0.1.24 – quellennahe Oktavkorrektur
 
 Die frühere Einzelton-Korrektur bei stark entgleister relativer Notation ist entfernt. Die App erkennt nun kumulative Oktavdrift in sequenziellen `\\relative`-Blöcken und verschiebt bei eindeutiger Evidenz nur vollständige notierte Takte um ganze Oktaven. Dadurch bleiben die Intervalle und die Kontur innerhalb jedes Taktes exakt erhalten. Die Korrektur wird nur übernommen, wenn alle Takte im Instrumentenumfang liegen und die Registerdrift deutlich reduziert wird; andernfalls bleibt das Original erhalten. Eine gleichmäßige Oktavverschiebung der vollständigen Stimme ist weiterhin zulässig, weil sie ebenfalls Intervalle und Kontur unverändert lässt. Regressionstest: Diagnose-Lauf `0d1db3d2b0884ebbb5d591dd5ca122a1` mit der entgleisten Mozart-Begleitstimme.
+
+### v0.1.25 – alte Oktavkorrekturen wiederherstellen
+
+„Neu kompilieren“ erkennt die exakt gespeicherte Ausgabe der früheren Einzeltonkorrektur (`mechanical-instrument-range`) anhand einer akzeptierten Korrektur im Diagnoseprotokoll. Nur bei unverändertem Quelltext wird das davor protokollierte Original erneut quellenbezogen korrigiert und kompiliert. Die neue Fassung wird ausschließlich nach bestandener MIDI- und Registerprüfung übernommen; eigene Änderungen werden nicht ersetzt. Kein zusätzlicher KI-Aufruf. Regressionstests verwenden die vollständige Mozart-Diagnose samt Auftakt und prüfen Basstonlage, unveränderte rechte Hand, Intervalle innerhalb der Takte und den Neukompilierungsweg.

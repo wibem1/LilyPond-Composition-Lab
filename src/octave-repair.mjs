@@ -19,6 +19,20 @@ function fingerprint(source){
 export function octaveOnlyChange(original,candidate){
  return typeof candidate==='string'&&candidate.trim()!==String(original).trim()&&fingerprint(original)===fingerprint(candidate);
 }
+// Recover only the exact accepted output of the retired note-clamping repair.
+// User edits and later corrected versions must never be replaced by old logs.
+export function legacyOctaveOriginal(code,entries){
+ const logs=[...entries].filter(Boolean).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+ for(let i=logs.length-1;i>=0;i--){
+  const e=logs[i];
+  if(e.event!=='korrekturpruefung'||e.method!=='mechanical-instrument-range'||typeof e.source!=='string'||e.source.trim()!==code.trim())continue;
+  const outcome=logs.slice(i+1).find(x=>x.event==='korrektur'||x.event==='korrekturpruefung');
+  if(outcome?.event!=='korrektur'||outcome.method!==e.method||outcome.accepted!==true)continue;
+  const original=logs.slice(0,i).findLast(x=>x.event==='kompilierung'&&typeof x.source==='string')?.source;
+  if(original&&octaveOnlyChange(original,e.source))return original;
+ }
+ return null;
+}
 // Stable positions avoid quoting LilyPond commands and multi-line snippets in JSON.
 export function octaveTokens(source){
  const result=[];

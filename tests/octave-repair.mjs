@@ -130,3 +130,24 @@ assert(driftFix.code.includes("bes4 f' d bes |"));
 assert(!driftFix.code.includes("bes,4 f' d bes |"));
 console.log('PASS: regression 0d1db3d2: cumulative relative-octave drift is repaired by octave-shifting complete measures in the LilyPond source; no individual MIDI-note clamping.');
 
+const {legacyOctaveOriginal}=await import('../src/octave-repair.mjs');
+const legacyLogs=JSON.parse(await readFile(new URL('./fixtures/legacy-mozart-octaves.json',import.meta.url),'utf8'));
+const oldCode=legacyLogs.find(e=>e.event==='korrekturpruefung').source;
+const trueOriginal=legacyLogs.find(e=>e.event==='kompilierung').source;
+assert.equal(legacyOctaveOriginal(oldCode,legacyLogs),trueOriginal);
+assert.equal(legacyOctaveOriginal(oldCode.replace('bes4 f d bes','bes4 f d a'),legacyLogs),null);
+assert.equal(legacyOctaveOriginal(oldCode,legacyLogs.filter(e=>e.event!=='korrektur')),null);
+const actualFix=automaticOctaveRepair(trueOriginal,mozartProfiles);
+assert.equal(actualFix.method,'relative-measure-drift');
+assert.equal(legacyOctaveOriginal(actualFix.code,legacyLogs),null);
+assert.equal(actualFix.code.split('left =')[0],trueOriginal.split('left =')[0]);
+const leftKeys=relativeOctavePlan(actualFix.code).filter(t=>t.block===1).map(t=>midiKeyForTest(t.token,t.octave));
+assert(leftKeys.every(k=>k>=33&&k<=65));
+const beforeLeft=relativeOctavePlan(trueOriginal).filter(t=>t.block===1);
+const afterLeft=relativeOctavePlan(actualFix.code).filter(t=>t.block===1);
+// One pickup followed by 23 four-note bars and a final whole note.
+for(let i=1;i<beforeLeft.length-1;i+=4){
+ const offsets=beforeLeft.slice(i,i+4).map((t,j)=>afterLeft[i+j].octave-t.octave);
+ assert(offsets.every(n=>n===offsets[0]),'every interval within the original bar must survive');
+}
+console.log('PASS: exact uploaded Mozart diagnosis: legacy source recovered, pickup/right hand/bar intervals preserved, bass register restored; edited and unaccepted sources untouched.');
