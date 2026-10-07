@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.31
+# LilyPond Composition Lab v0.1.32
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -152,3 +152,7 @@ Grundlagen: https://platform.claude.com/docs/en/build-with-claude/effort und htt
 ### v0.1.31 – drei Qualitätsstufen für alle Modelle
 
 Die Auswahl gilt anbieterübergreifend: „Kurz“ sendet `reasoning.effort=low`, „Ausgewogen“ sendet `reasoning.effort=medium`, „Modellvorgabe“ sendet keine Denksteuerung. OpenRouter übersetzt die einheitliche Steuerung in die vom Modell unterstützten Parameter; Modelle ohne entsprechende Unterstützung können die Anforderung ignorieren. Der bisherige Sonderfall für Sonnet und die starre 2.048-Token-Anforderung entfallen. Voreingestellt bleibt „Kurz“. Verlauf und Arbeitsstand speichern die Auswahl, die Verlaufsliste zeigt sie an und Laden stellt sie wieder her. Auftrag, Systemprompt und Gesamtbudget bleiben gleich. Simulierte Worker-Tests prüfen alle Stufen für mehrere Anbieter, Diagnose und beide Speicherwege. Zeit, Kosten und musikalische Qualität sind weiterhin am echten Ergebnis zu vergleichen.
+
+### v0.1.32 – lesbare Mindesthöhen der Textfelder
+
+Kompositionsauftrag, Zusatzangaben und LilyPond-Code erhalten Mindesthöhen von 8, 11 und 24 rem. Selbst ein vom Browser wiederhergestelltes oder manuell verkleinertes Feld kann die erste Textzeile nicht mehr abschneiden. Die Felder bleiben nach oben vergrößerbar. Build, Worker-Funktionstests und Artefaktprüfung bestanden. Die zusätzliche lokale Browserprüfung konnte wegen eines fehlenden Chromium-Browsers und fehlgeschlagener Browserdownloads nicht durchgeführt werden; kein tatsächlicher Android-Sichttest.

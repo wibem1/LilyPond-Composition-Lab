@@ -1,5 +1,5 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.31";
+const VERSION="0.1.32";
 import {compositionAttribution} from '../src/composition-attribution.mjs';
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';

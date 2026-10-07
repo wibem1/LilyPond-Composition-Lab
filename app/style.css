@@ -11,3 +11,9 @@
 .player-panel{border-color:#508968}.player-buttons{display:flex;gap:7px;flex-wrap:wrap;align-items:center}.player-buttons button{margin:8px 0}.player-track{display:flex;gap:14px;align-items:center;margin-top:14px}.player-track label{margin:0}.player-track input{flex:1;min-width:100px}.player-track span{min-width:85px;text-align:right}.midi-import{display:inline-block;cursor:pointer;border-radius:9px;background:#3d4d63;padding:10px 15px;color:#edf1fa}.midi-import input{display:none}.legacy-format{width:100%;margin-top:9px;color:#aab7c8}.legacy-format summary{cursor:pointer}.legacy-format label{width:fit-content}
 .settings-summary{cursor:pointer;font-size:1.07rem;font-weight:700;list-style-position:inside;padding:5px 0}.settings-summary:focus-visible{outline:2px solid #a7ccff}#connectionPanel{margin-bottom:45px}#connectionPanel details:not([open]){min-height:36px}
 summary{cursor:pointer;margin:12px 0}pre{white-space:pre-wrap;max-height:300px;overflow:auto}#code{font-family:ui-monospace,monospace}#score img{display:block;width:100%;background:white;margin:12px 0;border-radius:6px}header small{font-size:.8rem}.file{display:inline-block;background:#3d4d63;color:#edf1fa;padding:11px 18px;border-radius:9px;cursor:pointer}.file input{display:none}#downloads a{display:inline-block;margin:10px 15px 5px 0}button{min-height:44px}select[size]{min-height:150px}
+
+/* Keep editable text readable even after a browser restores a collapsed resize. */
+textarea{display:block}
+#task{min-height:8rem}
+#system{min-height:11rem}
+#code{min-height:24rem}
