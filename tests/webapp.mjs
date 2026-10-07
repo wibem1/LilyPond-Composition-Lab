@@ -13,9 +13,10 @@ const tiny=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-respons
 const driftMidi=(await readFile(new URL('./fixtures/luna-octave-drift.mid',import.meta.url))).toString('base64');let rendererMidi=null;
 let expressionError=false,localRepairSource=null,localRepairMidi=null;
 let paid=0,rendererDown=false,compileError=false,requests=[],rejectKey=false,redirectKey=false;
-let repairAnswer=null,repairMidi=null,repairFinish='stop',compositionFinish='stop';
+let repairAnswer=null,repairMidi=null,repairFinish='stop',compositionFinish='stop',reportedModel=undefined;
 let namingAnswers=['Teststück · 2','Nächtlicher Dialog','Dämmerpfade'],namingDown=false;
 const answer='\\version "2.24.3"\n\\header { title = "Teststück" }\n\\score { { c\'4 d\' e\' f\' } \\layout {} \\midi {} }';
+const attributedAnswer='% KI-Modell: test/model\n'+answer.replace('title = "Teststück" }','title = "Teststück" \n  composer = "test/model"\n}');
 class Socket extends EventTarget{
  accept(){}
  send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:localRepairSource&&d.params.src.includes(localRepairSource)?{...tiny,midi:localRepairMidi}:expressionError&&d.params.src.includes('labExpressionText')?{err:'expression failed',logs:'synthetic unsupported expression'}:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
@@ -26,12 +27,12 @@ globalThis.fetch=async(url,opts={})=>{
  if(String(url).includes('render.hacklily.org'))return rendererDown?new Response('unavailable',{status:503}):{webSocket:new Socket()};
  if(String(url).endsWith('/key')){assert.equal(opts.redirect,'manual');if(redirectKey)return new Response(null,{status:302,headers:{Location:'https://other.test'}});assert.equal(opts.headers.Authorization,'Bearer sk-or-v1-TESTKEY');return rejectKey?Response.json({error:{message:'Missing Authentication header'}},{status:401}):Response.json({data:{label:'test'}});}
  if(String(url).endsWith('/models'))return Response.json({data:[{id:'test/model',name:'Test',architecture:{output_modalities:['text']},pricing:{prompt:'0.000001',completion:'0.000002'}}]});
- if(String(url).endsWith('/chat/completions')){assert.equal(opts.redirect,'manual');paid++;const request=JSON.parse(opts.body);requests.push(request);assert.equal(opts.headers.Authorization,'Bearer sk-or-v1-TESTKEY');const naming=request.max_tokens===1000;if(naming&&namingDown)return Response.json({error:{message:'unavailable'}},{status:503});return Response.json({choices:[{message:{content:(/^(Repariere ausschließlich|Korrigiere ausschließlich)/.test(request.messages[0].content))?repairAnswer:naming?JSON.stringify({title:namingAnswers.shift()}):answer},finish_reason:(/^(Repariere ausschließlich|Korrigiere ausschließlich)/.test(request.messages[0].content))?repairFinish:compositionFinish}],usage:{prompt_tokens:100,completion_tokens:80,cost:0.0001}})}
+ if(String(url).endsWith('/chat/completions')){assert.equal(opts.redirect,'manual');paid++;const request=JSON.parse(opts.body);requests.push(request);assert.equal(opts.headers.Authorization,'Bearer sk-or-v1-TESTKEY');const naming=request.max_tokens===1000;if(naming&&namingDown)return Response.json({error:{message:'unavailable'}},{status:503});return Response.json({model:reportedModel,choices:[{message:{content:(/^(Repariere ausschließlich|Korrigiere ausschließlich)/.test(request.messages[0].content))?repairAnswer:naming?JSON.stringify({title:namingAnswers.shift()}):answer},finish_reason:(/^(Repariere ausschließlich|Korrigiere ausschließlich)/.test(request.messages[0].content))?repairFinish:compositionFinish}],usage:{prompt_tokens:100,completion_tokens:80,cost:0.0001}})}
  throw Error('Unexpected outbound destination: '+url);
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.28'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.29'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -43,13 +44,13 @@ assert(!JSON.stringify(await (await call('/api/diagnosis?runId=aaaaffffbbbbcccc'
 rejectKey=false;
 redirectKey=true;const redirect=await call('/api/key-check',{method:'POST',data:{}});assert.equal(redirect.status,400);assert((await redirect.json()).error.includes('Weiterleitung'));redirectKey=false;
 const runId='0123456789abcdef',data={model:'test/model',task:'Freie Komposition',system:'MY EDITED SYSTEM',runId,title:'Test',maxTokens:24000};
-const result=await value('/api/run',{method:'POST',data});assert.equal(paid,1);assert.equal(result.answer,answer);assert(result.compiled.pages.length);assert(result.compiled.url.endsWith('.mid'));assert.equal(requests[0].messages[0].content,'MY EDITED SYSTEM');assert.equal(requests[0].max_tokens,24000);assert(!('reasoning' in requests[0]));
+const result=await value('/api/run',{method:'POST',data});assert.equal(paid,1);assert.equal(result.answer,attributedAnswer);assert(result.compiled.pages.length);assert(result.compiled.url.endsWith('.mid'));assert.equal(requests[0].messages[0].content,'MY EDITED SYSTEM');assert.equal(requests[0].max_tokens,24000);assert(!('reasoning' in requests[0]));
 assert.equal((await call(result.compiled.pages[0].url)).headers.get('Content-Type'),'image/svg+xml');assert.equal((await call(result.compiled.url)).status,200);
-const history=(await value('/api/history/'+result.historyId)).entry;assert.equal(history.techout,answer);assert.equal(history.system,'MY EDITED SYSTEM');assert.equal(history.pages.length,result.compiled.pages.length);
-const ws=(await value('/api/workspace')).workspace;assert.equal(ws.techout,answer);assert.equal(ws.compositionModel,'test/model');
+const history=(await value('/api/history/'+result.historyId)).entry;assert.equal(history.techout,attributedAnswer);assert.equal(history.system,'MY EDITED SYSTEM');assert.equal(history.pages.length,result.compiled.pages.length);
+const ws=(await value('/api/workspace')).workspace;assert.equal(ws.techout,attributedAnswer);assert.equal(ws.compositionModel,'test/model');
 const diag=await (await call('/api/diagnosis?runId='+runId)).text();assert(!diag.includes('sk-or-v1-TESTKEY'));assert.equal(JSON.parse(diag).entries.length,3);assert(diag.includes('durationMs'));assert(diag.includes('MY EDITED SYSTEM'));
 const repeated=await value('/api/run',{method:'POST',data:{...data,runId:'1111222233334444',title:result.title}});
-assert.equal(repeated.title,'Nächtlicher Dialog');assert.equal(repeated.answer,answer.replace('Teststück','Nächtlicher Dialog'));assert.equal(repeated.rawAnswer,answer);
+assert.equal(repeated.title,'Nächtlicher Dialog');assert.equal(repeated.answer,attributedAnswer.replace('Teststück','Nächtlicher Dialog'));assert.equal(repeated.rawAnswer,answer);
 assert.equal(repeated.titleWarning,'');assert(Math.abs(repeated.usage.cost-.0003)<1e-9);
 const namingDiag=await (await call('/api/diagnosis?runId=1111222233334444')).json();assert(Math.abs(namingDiag.costs.total-.0003)<1e-9);assert.equal(namingDiag.entries.filter(e=>e.operation==='title'&&e.event==='antwort').length,2);
 assert.equal(requests[1].messages.length,2);assert.equal(requests[0].messages.length,2);assert.equal(requests[1].messages[0].content,data.system);assert.equal(requests[1].messages[1].content,data.task);
@@ -61,7 +62,7 @@ compileError=true;const failed=await value('/api/run',{method:'POST',data:{...da
 const compiled=await call('/api/compile-lilypond',{method:'POST',data:{code:answer,runId:'abcdef0123456789'}});assert.equal(compiled.status,422);assert((await compiled.json()).logs.includes('line 3'));
 compileError=false;namingDown=true;
 const defaultIndex=requests.length;
-const namingFailed=await value('/api/run',{method:'POST',data:{...data,system:'',runId:'4444555566667777'}});assert(namingFailed.titleWarning.includes('ursprünglichen Titel'));assert.equal(namingFailed.answer,answer);assert(namingFailed.compiled.url);assert.equal((await value('/api/history/'+namingFailed.historyId)).entry.techout,answer);namingDown=false;
+const namingFailed=await value('/api/run',{method:'POST',data:{...data,system:'',runId:'4444555566667777'}});assert(namingFailed.titleWarning.includes('ursprünglichen Titel'));assert.equal(namingFailed.answer,attributedAnswer);assert(namingFailed.compiled.url);assert.equal((await value('/api/history/'+namingFailed.historyId)).entry.techout,attributedAnswer);namingDown=false;
 const originalPrompt=requests[defaultIndex].messages[0].content;
 assert(originalPrompt.includes('Es gibt keinen vorgeschalteten Entwurf.'));assert(originalPrompt.includes('Pedalangaben'));assert(originalPrompt.includes('Verzierungen, wenn sie musikalisch passen')); assert(!originalPrompt.includes('Technische Notation'));
 // Restore the unchanged technical standard stored by v0.1.7/8, retaining edited prompts.
@@ -76,7 +77,7 @@ assert(drift.warning.includes('Tonumfang prüfen'));assert(drift.url);assert.equ
 // A MIDI violation not explained by source pitches is reported, never sent to AI.
 rendererMidi=driftMidi;namingDown=true;
 const mechanical=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd1111'}});
-assert.equal(mechanical.answer,answer);assert(mechanical.compiled.repairFailed);assert.equal(mechanical.costs.realisation,0);
+assert.equal(mechanical.answer,attributedAnswer);assert(mechanical.compiled.repairFailed);assert.equal(mechanical.costs.realisation,0);
 const md=await value('/api/diagnosis?runId=aaaaccccdddd1111');assert.equal(md.costs.realisation,0);assert(md.entries.some(e=>e.event==='korrektur'&&e.paidCalls===0&&!e.accepted));
 const noKeyPaid=paid;
 const keyless=await value('/api/repair-octaves',{method:'POST',data:{code:answer,runId:'aaaaccccdddd6666'}});assert.equal(keyless.cost,0);assert.equal(paid,noKeyPaid);
@@ -188,3 +189,20 @@ const editedLegacy=legacyCode.replace('bes4 f d bes','bes4 f d a');
 const editedResult=await value('/api/compile-lilypond',{method:'POST',data:{code:editedLegacy,runId:legacyRun}});
 assert.equal(editedResult.code,undefined);assert.equal(paid,paidBeforeLegacy);
 console.log('PASS: recompile route restores the exact legacy Mozart source, returns matching updated score/MIDI/code, costs no AI calls and preserves user edits.');
+
+// The API-reported model must win over the requested routing alias.
+reportedModel='perplexity/sonar';namingDown=true;
+const attributionPaid=paid;
+const attributed=await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',title:'Fresh title',runId:'abcd1111abcd2222'}});
+assert(attributed.answer.startsWith('% KI-Modell: perplexity/sonar\n'));
+assert(attributed.answer.includes('composer = "perplexity/sonar"'));
+assert.equal(attributed.rawAnswer,answer);
+const attributedHistory=(await value('/api/history/'+attributed.historyId)).entry;
+assert.equal(attributedHistory.actualCompositionModel,'perplexity/sonar');
+assert.equal(attributedHistory.compositionModel,'test/model');
+assert.equal(attributedHistory.techout,attributed.answer);
+assert.equal((await value('/api/workspace')).workspace.techout,attributed.answer);
+assert.equal(await (await call(attributed.downloads[0].url)).text(),attributed.answer);
+assert.equal(paid,attributionPaid+3); // composition and the existing two title attempts only
+reportedModel=undefined;namingDown=false;
+console.log('PASS: API-reported model is stored in source, composer, history, workspace and download; requested selector and raw answer remain available without extra attribution calls.');

@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.28
+# LilyPond Composition Lab v0.1.29
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -138,3 +138,7 @@ Grundlage: https://developers.cloudflare.com/r2/api/workers/workers-multipart-us
 ### v0.1.28 – Soundfont lokal behalten und vorladen
 
 Der aktive eigene Soundfont wird zusätzlich auf dem jeweiligen Gerät in CacheStorage gespeichert. Beim Öffnen prüft die App die Servermetadaten und verwendet bei identischem Speicherzeitpunkt und gleicher Größe die lokalen Bytes; der Download beginnt andernfalls bereits im Hintergrund mit Prozentanzeige. Eine lokal gewählte Datei befüllt den Cache nach erfolgreichem Cloud-Speichern unmittelbar. Audioinitialisierung und Wiedergabe beginnen weiterhin erst auf Klick. Versionsänderungen am Klang, der Wechsel auf Standard und unvollständige Übertragungen werden berücksichtigt. Bei nicht verfügbarem lokalen Speicher bleibt Netzladen möglich; Browser können lokale Daten bei Speicherknappheit entfernen. Playerfehler werden in der Diagnose erfasst. Geprüft: neuer App-Start ohne Download, exakte Bytes, geänderte Klangversion, gemeinsames Vorladen/Abspielen, Fortschritt, alte parallele Downloads, fehlender Speicher und unvollständige Datei.
+
+### v0.1.29 – verwendete KI im Kompositionscode
+
+Neue vollständige Kompositionen enthalten das Modell aus der API-Antwort (ersatzweise das angeforderte Modell) als KI-Modell-Kommentar und im Komponistenfeld aller Header. Die unveränderte Originalantwort bleibt im Diagnoseprotokoll erhalten. Verlauf, Arbeitsstand und LilyPond-Download übernehmen denselben gekennzeichneten Code; reine Neukompilierungen und importierte Dateien werden nicht umetikettiert. Kein zusätzlicher KI-Aufruf.

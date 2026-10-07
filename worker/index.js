@@ -1,5 +1,6 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.28";
+const VERSION="0.1.29";
+import {compositionAttribution} from '../src/composition-attribution.mjs';
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
@@ -133,7 +134,7 @@ async function saveFile(env,title,ext,bytes){
 }
 async function saveHistory(env,b){
  const id=historyId(b.id)||randomUUID().replaceAll('-',''),old=await getJson(env,'history/'+id+'.json')||{};
- const entry={id,createdAt:old.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:compositionCosts(b.costs===undefined?old.costs:b.costs),tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compositionReasoning:b.compositionReasoning==='short'?'short':'default',compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
+ const entry={id,createdAt:old.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),actualCompositionModel:clean(b.actualCompositionModel??old.actualCompositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:compositionCosts(b.costs===undefined?old.costs:b.costs),tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compositionReasoning:b.compositionReasoning==='short'?'short':'default',compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
  await env.BUCKET.put('history/'+id+'.json',JSON.stringify(entry),{httpMetadata:{contentType:'application/json'},customMetadata:{summary:JSON.stringify(historyPublic(entry))}});return historyPublic(entry);
 }
 function validDownloads(d){return Array.isArray(d)?d.filter(x=>typeof x?.url==='string'&&x.url.startsWith('/download/')&&typeof x.label==='string').slice(0,8).map(x=>({label:x.label.slice(0,100),url:x.url.slice(0,500)})):[]}
@@ -388,11 +389,13 @@ async function run(req,env){
   const titleKey=t=>compositionFilename(t).toLocaleLowerCase('de').replace(/\s*(?:[·–—-]\s*)?\(?\d+\)?\s*$/,'').trim();
   const usedKeys=new Set(titleContext.map(titleKey));
   let title=proposedTitle,titleWarning='',titleCost=0;
+  const actualCompositionModel=clean(response.model).trim()||model;
   const usage=response.usage?{...response.usage}:null,finish=response.choices?.[0]?.finish_reason||null;
   await log(env,'antwort',runId,{stage:'composition',model,answer,usage,finish_reason:finish,durationMs:Date.now()-started});
+  if(finish!=='length')code=compositionAttribution(code,actualCompositionModel);
   const downloads=[];
-  const base={title:compositionFilename(title),task,system,techout:code,compositionModel:model,format:'lilypond',runId,downloads,costs:{composition:Number(usage?.cost)||0,realisation:0},tokens1:max_tokens,compositionReasoning};
-  // Persist the original composition before naming or compiling it.
+  const base={title:compositionFilename(title),task,system,techout:code,compositionModel:model,actualCompositionModel,format:'lilypond',runId,downloads,costs:{composition:Number(usage?.cost)||0,realisation:0},tokens1:max_tokens,compositionReasoning};
+  // Persist the composition before naming or compiling; raw answer stays in diagnosis.
   const saved=await saveHistory(env,base);
   if(finish==='length'){
    const compiled={error:'KI-Antwort wegen des Tokenlimits abgeschnitten. Der Notentext ist unvollständig. Bitte das Tokenbudget erhöhen und erneut komponieren.',incomplete:true};
