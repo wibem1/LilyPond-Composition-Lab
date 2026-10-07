@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.25
+# LilyPond Composition Lab v0.1.26
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -84,7 +84,7 @@ Der Denkaufwand beim Komponieren ist sichtbar wählbar. Die Weboberfläche start
 
 ## Version 0.1.21 · 07.10.2026
 
-Eigene SF2-Soundfonts werden nach erfolgreichem Laden als Datei im privaten App-Speicher gespeichert (bis 64 MiB). Metadaten und aktive Auswahl bleiben bei Neuladen und Gerätewechsel erhalten. Beim ersten Abspielen lädt der Player den gespeicherten Klang; Audioinitialisierung bleibt an die Benutzeraktion gebunden. „Standard-SoundFont“ setzt die gespeicherte Auswahl zurück. Fehlgeschlagenes Speichern wird ausdrücklich angezeigt; eine unvollständige/ungültige Übertragung ersetzt die zuvor gespeicherte Datei nicht. Früher nur im Player geladene Dateien müssen einmal neu gewählt werden. Die Diagnose nennt die gespeicherte Soundfont-Auswahl.
+Eigene SF2-Soundfonts werden nach erfolgreichem Laden als Datei im privaten App-Speicher gespeichert (seit v0.1.26 ohne feste Größenbegrenzung der App). Metadaten und aktive Auswahl bleiben bei Neuladen und Gerätewechsel erhalten. Beim ersten Abspielen lädt der Player den gespeicherten Klang; Audioinitialisierung bleibt an die Benutzeraktion gebunden. „Standard-SoundFont“ setzt die gespeicherte Auswahl zurück. Fehlgeschlagenes Speichern wird ausdrücklich angezeigt; eine unvollständige/ungültige Übertragung ersetzt die zuvor gespeicherte Datei nicht. Früher nur im Player geladene Dateien müssen einmal neu gewählt werden. Die Diagnose nennt die gespeicherte Soundfont-Auswahl.
 
 Die zusätzliche MIDI-Fassung erzeugt Triller mit einer Zielrate von ungefähr acht Einzeltönen pro Sekunde, unabhängig vom Stücktempo. Die Anzahl wird auf vollständige Tonpaare gerundet; sehr kurze Triller behalten die Mindestzahl des LilyPond-Moduls. Notenbild, Stücktempo, Dynamik, übrige Verzierungen und Autoren mit eigener articulate-Konfiguration bleiben erhalten. Vorhandene MIDI-Dateien benötigen einmal „Neu kompilieren“, ohne KI-Aufruf. Die Diagnose/Kompilierantwort kennzeichnet die neue Standardrate, ohne sie rückwirkend für ältere MIDI-Dateien zu behaupten.
 
@@ -124,3 +124,7 @@ Die frühere Einzelton-Korrektur bei stark entgleister relativer Notation ist en
 ### v0.1.25 – alte Oktavkorrekturen wiederherstellen
 
 „Neu kompilieren“ erkennt die exakt gespeicherte Ausgabe der früheren Einzeltonkorrektur (`mechanical-instrument-range`) anhand einer akzeptierten Korrektur im Diagnoseprotokoll. Nur bei unverändertem Quelltext wird das davor protokollierte Original erneut quellenbezogen korrigiert und kompiliert. Die neue Fassung wird ausschließlich nach bestandener MIDI- und Registerprüfung übernommen; eigene Änderungen werden nicht ersetzt. Kein zusätzlicher KI-Aufruf. Regressionstests verwenden die vollständige Mozart-Diagnose samt Auftakt und prüfen Basstonlage, unveränderte rechte Hand, Intervalle innerhalb der Takte und den Neukompilierungsweg.
+
+### v0.1.26 – Soundfonts ohne 64-MB-Grenze
+
+Die feste 64-MB-Sperre ist sowohl beim Auswählen als auch beim Speichern entfernt. Die vollständige SF2-Struktur wird weiterhin geprüft; ungültige Dateien ersetzen keinen gespeicherten Klang. Regressionstest: eine gültige RIFF/SF2-Datei über 64 MiB wird mit Content-Length gespeichert und unverändert zurückgelesen. Praktische Grenzen ergeben sich weiterhin aus Arbeitsspeicher und Hosting, nicht aus einer festen Dateigrenze in der App.

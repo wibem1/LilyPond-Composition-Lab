@@ -1,5 +1,5 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.25";
+const VERSION="0.1.26";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
@@ -242,8 +242,7 @@ async function handle(req,env,ctx){
   return text(file.body,'application/octet-stream');
  }
  if(req.method==='POST'&&p==='/api/soundfont'){
-  const max=64*1024*1024;if(Number(req.headers.get('Content-Length'))>max)return json({error:'SoundFont ist größer als 64 MB.'},413);
-  const buffer=await req.arrayBuffer();if(buffer.byteLength>max)return json({error:'SoundFont ist größer als 64 MB.'},413);
+  const buffer=await req.arrayBuffer();
   const data=new Uint8Array(buffer),tag=at=>String.fromCharCode(...data.subarray(at,at+4));
   if(data.length<12||tag(0)!=='RIFF'||tag(8)!=='sfbk'||new DataView(buffer).getUint32(4,true)+8!==data.length)return json({error:'Bitte eine vollständige SF2-Datei wählen.'},400);
   const view=new DataView(buffer),lists=new Set();let at=12;

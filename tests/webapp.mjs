@@ -31,7 +31,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.25'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.26'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -138,6 +138,17 @@ assert.equal((await value('/api/soundfont')).name,'Saved piano.sf2');assert.deep
 assert.equal((await fontPost(sf.slice(0,20),'Bad font.sf2')).status,400);assert.equal((await value('/api/soundfont')).name,'Saved piano.sf2');
 assert.equal((await fontPost(sf,'Other.sf2','https://other.test')).status,403);
 const savedFontKey=JSON.parse(new TextDecoder().decode(env.BUCKET.items.get('settings/soundfont.json').data)).key;
+// Valid RIFF padding takes the existing playable SF2 past the former limit.
+const largeFont=new Uint8Array(65*1024*1024);
+largeFont.set(new Uint8Array(sf));
+largeFont.set(new TextEncoder().encode('JUNK'),sf.byteLength);
+new DataView(largeFont.buffer).setUint32(sf.byteLength+4,largeFont.length-sf.byteLength-8,true);
+new DataView(largeFont.buffer).setUint32(4,largeFont.length-8,true);
+const largeResponse=await worker.fetch(new Request('https://lab.test/api/soundfont',{method:'POST',headers:{'Content-Length':String(largeFont.length),'X-SoundFont-Name':'Large.sf2'},body:largeFont}),env,{});
+assert.equal(largeResponse.status,200);assert.equal((await largeResponse.json()).bytes,largeFont.length);
+assert.deepEqual(new Uint8Array(await (await call('/api/soundfont/file')).arrayBuffer()),largeFont);
+assert(!(await (await call('/app.mjs')).text()).includes('f.size>64*1024*1024'));
+console.log('PASS: valid SF2 over 64 MiB with Content-Length saves and round-trips unchanged; browser size guard removed.');
 await fontPost(sf,'Second piano.sf2');assert(!env.BUCKET.items.has(savedFontKey));assert.equal((await value('/api/soundfont')).name,'Second piano.sf2');
 assert.equal((await value('/api/diagnosis?runId=aa0011223344556688')).playback.soundfont,'Second piano.sf2');
 await value('/api/soundfont',{method:'DELETE'});assert((await value('/api/soundfont')).standard);assert.equal((await call('/api/soundfont/file')).status,404);
