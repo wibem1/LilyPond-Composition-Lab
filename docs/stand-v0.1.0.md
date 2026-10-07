@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.22
+# LilyPond Composition Lab v0.1.23
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -107,3 +107,10 @@ Die Nebennote folgt der Tonart; `\pitchedTrill ... \startTrillSpan <Ton>` hat Vo
 Das gedruckte Notenbild bleibt erhalten. MIDI-Dateien im Verlauf werden nicht rückwirkend geändert; einmal **Neu kompilieren** übernimmt die neue Wiedergabe ohne KI-Kosten. Eigene `articulate.ly`-Konfigurationen bleiben maßgeblich. Die Diagnose nennt `musical-v2` und die Zielwerte. Reale LilyPond-2.26-MIDI-Tests prüfen Haupt-/Nebennotenanfang, Tonarten, expliziten chromatischen Trillerton, gehaltene Akkordtöne, Vorschläge, Nachschlag, kurze Triller, Trillerspanner, unabhängige Stimmen sowie unveränderte Tempo- und Taktlängen.
 
 Grundlagen: [Music and the Bassoon, University of Texas, Unit 44](https://www.musicandthebassoon.org/50-units/unit-44), [MEI Trill](https://music-encoding.org/guidelines/v5/elements/trill.html), [Henle: C. P. E. Bach, Hinweise zur Aufführungspraxis](https://www.henle.de/media/ab/53/5a/1697725708/0555-1697725708-sync.pdf).
+
+## v0.1.23 – 7. Oktober 2026
+
+- Arpeggierte Akkorde hörbar: Richtung, Verbindung zwischen Systemen, kurze Noten, Haltebögen, Dynamik und Pedalwechsel mit echtem Compiler-MIDI geprüft.
+- Kosten pro Verlaufseintrag in Liste und beim Wiedereinladen; fehlende historische Kosten ausdrücklich unbekannt.
+- Musikalische Wiedergabe durch Primärquellen, Codeprüfung und synthetische MIDI-Beispiele untersucht. Ergebnisse und offene Funktionen: [expression-audit.md](expression-audit.md).
+- Keine bezahlte KI-Komposition für die Prüfung. Kreative Kompositionsvorgaben bleiben unverändert.

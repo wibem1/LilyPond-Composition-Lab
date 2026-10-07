@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {parseMidi} from '../src/midi-reader.mjs';
+const b=await readFile('tests/fixtures/expression-audit.mid');const m=parseMidi(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength)),q=m.ppq;
+const on=m.events.filter(e=>e.type==='on');const bar=i=>on.filter(e=>e.tick>=i*q*4&&e.tick<(i+1)*q*4);
+const length=n=>m.events.find(e=>e.type==='off'&&e.key===n.key&&e.tick>n.tick).tick-n.tick;
+assert.deepEqual(bar(0).map(length),[q*15/16,q/2,q/4,q*3/4]);assert.equal(length(bar(1)[0]),q);assert.equal(length(bar(1)[1]),q);
+assert(bar(2)[1].vel>bar(2)[0].vel);assert(bar(2)[2].vel>bar(2)[1].vel);
+assert.deepEqual(bar(3).map(e=>e.vel),[69,78,86,95]);
+assert.equal(bar(4).length,1);assert(!m.events.some(e=>e.type==='control'&&e.tick>=4*q*4&&e.tick<6*q*4),'held-note hairpin sends no expression ramp');
+assert.deepEqual(bar(6).map(length),[q*15/8,q*15/8],'fermata has no effect: known gap');assert.deepEqual(bar(7).map(e=>e.key),[60,67],'glissando has no intermediate notes: known gap');
+assert.deepEqual(bar(8).filter(e=>e.tick<8*q*4+q).map(e=>e.key),[60,59,60]);assert.deepEqual(bar(8).filter(e=>e.tick>=8*q*4+2*q&&e.tick<8*q*4+3*q).map(e=>e.key),[62,60,59,60]);assert.equal(bar(8).filter(e=>e.tick>=8*q*4+3*q).length,1,'reverseturn ignored: known gap');
+assert.equal(bar(9).length,16,'colon tremolo and two-note tremolo expand');
+assert.deepEqual(m.events.filter(e=>e.type==='tempo').map(e=>[e.tick,e.value]),[[0,1000000],[40*q,1666666],[44*q,1000000]],'ritardando is one abrupt step, not a ramp: known gap');
+assert(bar(12).every(e=>e.vel===bar(11)[0].vel),'free expression text does not alter velocity');assert.deepEqual(m.events.filter(e=>e.type==='control'&&e.cc===64).map(e=>e.value),[127,0]);
+console.log('PASS: real LilyPond 2.26 expression audit: basic articulation, accents, multi-note dynamics, ornaments, tremolo and sustain; confirmed gaps in fermata, glissando, reversed turn, held-note dynamics and gradual tempo.');

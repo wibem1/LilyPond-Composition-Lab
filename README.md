@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.22
+# LilyPond Composition Lab v0.1.23
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -107,3 +107,11 @@ Die Nebennote folgt der Tonart; `\pitchedTrill ... \startTrillSpan <Ton>` hat Vo
 Das gedruckte Notenbild bleibt erhalten. MIDI-Dateien im Verlauf werden nicht rückwirkend geändert; einmal **Neu kompilieren** übernimmt die neue Wiedergabe ohne KI-Kosten. Eigene `articulate.ly`-Konfigurationen bleiben maßgeblich. Die Diagnose nennt `musical-v2` und die Zielwerte. Reale LilyPond-2.26-MIDI-Tests prüfen Haupt-/Nebennotenanfang, Tonarten, expliziten chromatischen Trillerton, gehaltene Akkordtöne, Vorschläge, Nachschlag, kurze Triller, Trillerspanner, unabhängige Stimmen sowie unveränderte Tempo- und Taktlängen.
 
 Grundlagen: [Music and the Bassoon, University of Texas, Unit 44](https://www.musicandthebassoon.org/50-units/unit-44), [MEI Trill](https://music-encoding.org/guidelines/v5/elements/trill.html), [Henle: C. P. E. Bach, Hinweise zur Aufführungspraxis](https://www.henle.de/media/ab/53/5a/1697725708/0555-1697725708-sync.pdf).
+
+### v0.1.23 – Arpeggien, Kostenverlauf und Ausdrucksprüfung
+
+Arpeggiozeichen werden im separaten MIDI-Score als rasch aufeinanderfolgende, gehaltene Akkordtöne gespielt. Auf-/Abwärtsrichtung, einmalige Einstellungen, verbundene oder unabhängige Klavierhände, Nicht-Arpeggio-Klammern sowie kurze Notenwerte sind berücksichtigt. Ganze gebundene Akkorde und Pedalwechsel sind mit Compiler-MIDI getestet. Beginn standardmäßig auf dem Schlag; keine automatische historische Interpretation.
+
+Kosten werden je Verlaufseintrag gespeichert und in der Liste sowie beim Laden angezeigt. Alte Einträge ohne erfasste Kosten zeigen „Kosten nicht erfasst“; sie übernehmen keine Kosten der vorher geladenen Komposition.
+
+Die [Ausdrucksprüfung](docs/expression-audit.md) dokumentiert getestete Funktionen, feste Näherungen und offene Lücken. Insbesondere kontinuierliche Tempoänderungen, Fermaten, Dynamik auf gehaltenen Tönen, Glissando und manche Ornamentformen sind noch nicht vollständig umgesetzt.

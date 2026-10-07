@@ -31,7 +31,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.22'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.23'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -144,3 +144,18 @@ await value('/api/soundfont',{method:'DELETE'});assert((await value('/api/soundf
 console.log('PASS: real SoundFont bytes saved and restored, replacement cleanup, malformed upload preserves previous choice, origin guard, diagnosis and saved default reset.');
 
 assert(!requests.some(r=>/^(Repariere ausschließlich|Korrigiere ausschließlich)/.test(r.messages[0].content)));assert(!html.includes('id="repair"'));console.log('PASS: no octave repair AI requests anywhere, automatic compile correction and no repair button.');
+
+const persistedCosts={composition:.7,realisation:.0123};
+const paidEntry=await value('/api/history',{method:'POST',data:{title:'Cost persistence regression',techout:answer,costs:persistedCosts}});
+assert.deepEqual(paidEntry.entry.costs,persistedCosts);
+assert.deepEqual((await value('/api/history/'+paidEntry.entry.id)).entry.costs,persistedCosts);
+assert.deepEqual((await value('/api/history')).entries.find(e=>e.id===paidEntry.entry.id).costs,persistedCosts);
+await value('/api/history',{method:'POST',data:{id:paidEntry.entry.id,title:'Edited cost entry',techout:answer}});
+assert.deepEqual((await value('/api/history/'+paidEntry.entry.id)).entry.costs,persistedCosts,'editing without costs cannot erase stored costs');
+const legacyKey='history/'+paidEntry.entry.id+'.json',legacy=env.BUCKET.items.get(legacyKey);
+const oldSummary=JSON.parse(legacy.customMetadata.summary);delete oldSummary.costs;legacy.customMetadata.summary=JSON.stringify(oldSummary);
+assert.deepEqual((await value('/api/history')).entries.find(e=>e.id===paidEntry.entry.id).costs,persistedCosts,'old list metadata reads stored entry costs');
+const unknownEntry=await value('/api/history',{method:'POST',data:{title:'Unknown historical costs',techout:answer}});
+assert.equal((await value('/api/history/'+unknownEntry.entry.id)).entry.costs,null);
+assert((await (await call('/composition-costs.mjs')).text()).includes('costLabel'));
+console.log('PASS: history/list/reload preserve individual costs; metadata compatibility and unknown history costs verified.');
