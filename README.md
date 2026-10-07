@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.27
+# LilyPond Composition Lab v0.1.28
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -134,3 +134,7 @@ Die feste 64-MB-Sperre ist sowohl beim Auswählen als auch beim Speichern entfer
 Die Oberfläche überträgt SF2-Dateien in aufeinanderfolgenden 8-MiB-Teilen über die native R2-Multipart-API und zeigt den Fortschritt. Der Server hält nur einen Teil im Speicher; RIFF/SF2-Header werden über Teilgrenzen hinweg geprüft. Erst nach vollständiger Prüfung und Abschluss wird der gespeicherte Klang ersetzt. Fehler und abgebrochene Uploads erhalten die bisherige Auswahl. Der Player lädt den Soundfont weiterhin im Browser; dessen verfügbarer Arbeitsspeicher bleibt maßgeblich. Prüfung: 160-MiB-Datei über die tatsächliche Worker-Route mit maximal 8 MiB pro Anfrage, Datenintegrität, Fehler/Abbruch, unvollständige und ungültige Dateien sowie die echte Browser-Uploadfunktion.
 
 Grundlage: https://developers.cloudflare.com/r2/api/workers/workers-multipart-usage/
+
+### v0.1.28 – Soundfont lokal behalten und vorladen
+
+Der aktive eigene Soundfont wird zusätzlich auf dem jeweiligen Gerät in CacheStorage gespeichert. Beim Öffnen prüft die App die Servermetadaten und verwendet bei identischem Speicherzeitpunkt und gleicher Größe die lokalen Bytes; der Download beginnt andernfalls bereits im Hintergrund mit Prozentanzeige. Eine lokal gewählte Datei befüllt den Cache nach erfolgreichem Cloud-Speichern unmittelbar. Audioinitialisierung und Wiedergabe beginnen weiterhin erst auf Klick. Versionsänderungen am Klang, der Wechsel auf Standard und unvollständige Übertragungen werden berücksichtigt. Bei nicht verfügbarem lokalen Speicher bleibt Netzladen möglich; Browser können lokale Daten bei Speicherknappheit entfernen. Playerfehler werden in der Diagnose erfasst. Geprüft: neuer App-Start ohne Download, exakte Bytes, geänderte Klangversion, gemeinsames Vorladen/Abspielen, Fortschritt, alte parallele Downloads, fehlender Speicher und unvollständige Datei.

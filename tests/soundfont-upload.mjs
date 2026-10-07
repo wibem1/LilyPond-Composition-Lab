@@ -73,7 +73,7 @@ console.log('PASS: 160 MiB SF2 multipart route under 8 MiB per-request memory bo
 // Run the shipped browser upload function with a server that rejects big requests.
 const app=await readFile('app/app.mjs','utf8'),start=app.indexOf('async function saveSoundFont('),end=app.indexOf('\nfunction invalidate',start);
 const sizes=[],progress={textContent:''};let aborted=false;
-const context={selectedFont:null,$:()=>progress,api:async(path,data)=>path.includes('?')?{name:'Browser.sf2',bytes:25*1024*1024}:{id:'test',partBytes:FONT_PART_BYTES},fetch:async(path,opts)=>{
+const context={selectedFont:null,preparedFont:null,preparedFontVersion:'',fontCache:{store:async(f,b)=>new Blob([b]),version:f=>f.name},$:()=>progress,api:async(path,data)=>path.includes('?')?{name:'Browser.sf2',bytes:25*1024*1024}:{id:'test',partBytes:FONT_PART_BYTES},fetch:async(path,opts)=>{
  if(opts.method==='DELETE'){aborted=true;return {ok:true};}
  sizes.push(opts.body.byteLength);assert(opts.body.byteLength<=FONT_PART_BYTES);
  return {ok:true,json:async()=>({received:Math.min(sizes.length*FONT_PART_BYTES,25*1024*1024),bytes:25*1024*1024})};

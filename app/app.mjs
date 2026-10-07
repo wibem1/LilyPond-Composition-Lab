@@ -1,6 +1,7 @@
 import {compositionCosts,costLabel} from '/composition-costs.mjs';
 import {SoundFontPlayer} from '/soundfont-player.mjs';
 import {RunClient} from '/run-client.mjs';
+import {SoundFontCache} from '/soundfont-cache.mjs';
 const $=id=>document.getElementById(id);
 const ORIGINAL_SYSTEM='Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf.';
 const TECHNICAL_SYSTEM='Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf. Technische Notation: Verwende absolute Tonhöhen mit ausdrücklich angegebenen Oktaven (ohne \\relative). Prüfe die tatsächlichen Oktavlagen; Verwende für jedes Instrument dessen spielbaren klingenden Tonumfang; für Klavier A0 bis C8. Diese Notationsregel macht keine Vorgaben zur musikalischen Gestaltung.';
@@ -15,7 +16,18 @@ function persist(){if(restoring||runClient.pendingRunId)return Promise.resolve()
 function setBusy(v){busy=v;for(const id of ['compose','compile','new','import','openHistory','deleteHistory','saveHistory'])$(id).disabled=v;}
 function message(s){$('status').textContent=s;}
 const runClient=new RunClient({onprogress:message});
-async function restoreSoundFont(){const revision=fontRevision;try{const font=await api('/api/soundfont');if(revision===fontRevision){selectedFont=font;$('playerStatus').textContent='Klang gespeichert: '+font.name;}return font;}catch(e){$('playerStatus').textContent='Gespeicherter Klang konnte nicht abgerufen werden: '+e.message;return null;}}
+const fontCache=new SoundFontCache({onwarning:e=>runClient.record(state.runId,'soundfont_cache_error',e.message)});
+let preparedFont=null,preparedFontVersion='',fontPreparing=null;
+function prepareSoundFont(font){
+ const revision=fontRevision,version=fontCache.version(font);
+ const job=fontCache.prepare(font,p=>{
+  if(revision!==fontRevision||player.sf)return;
+  const percent=p.total?Math.min(100,Math.round(p.received/p.total*100)):null;
+  $('playerStatus').textContent=p.ready?'Klang bereit: '+font.name+(p.local?' · lokal gespeichert':''):'SoundFont wird geladen: '+font.name+(percent===null?'':' · '+percent+' %');
+ }).then(blob=>{if(revision===fontRevision){preparedFont=blob;preparedFontVersion=version;}return blob;});
+ fontPreparing=job;job.catch(e=>{if(revision===fontRevision&&!player.sf)$('playerStatus').textContent='SoundFont konnte nicht vorgeladen werden: '+e.message;});return job;
+}
+async function restoreSoundFont(){const revision=fontRevision;try{const font=await api('/api/soundfont');if(revision===fontRevision){selectedFont=font;$('playerStatus').textContent='Klang gespeichert: '+font.name;if(!font.standard)prepareSoundFont(font);}return font;}catch(e){$('playerStatus').textContent='Gespeicherter Klang konnte nicht abgerufen werden: '+e.message;return null;}}
 async function saveSoundFont(buffer,name){
  const upload=await api('/api/soundfont/upload',{name,bytes:buffer.byteLength});
  const path='/api/soundfont/upload?id='+encodeURIComponent(upload.id);
@@ -25,7 +37,7 @@ async function saveSoundFont(buffer,name){
    const d=await r.json();if(!r.ok)throw Error(d.error||'SoundFont-Teil konnte nicht gespeichert werden.');
    $('playerStatus').textContent='SoundFont speichern: '+Math.round(d.received/d.bytes*100)+' % · '+name;
   }
-  const d=await api(path,{});selectedFont=d;return d;
+  const d=await api(path,{});selectedFont=d;preparedFont=await fontCache.store(d,buffer);preparedFontVersion=fontCache.version(d);return d;
  }catch(e){await fetch(path,{method:'DELETE'}).catch(()=>{});throw e;}
 }
 
@@ -80,10 +92,10 @@ $('reloadModels').onclick=models;$('provider').onchange=()=>{populateModels();qu
 for(const id of ['task','title','system','tokens','compositionReasoning'])$(id).oninput=queueSave;$('code').oninput=invalidate;
 const fmt=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
 player.onprogress=(t,d)=>{$('position').max=d||1;$('position').value=t;$('time').textContent=fmt(t)+' / '+fmt(d)};
-$('play').onclick=async()=>{if(loading)return;loading=true;$('font').disabled=true;$('defaultFont').disabled=true;$('play').disabled=true;try{await player.init();if(!player.sf){await fontRestore;if(!selectedFont)await restoreSoundFont();if(!selectedFont)throw Error('Gespeicherter Klang ist nicht erreichbar. Bitte erneut versuchen.');await player.loadSoundFont(selectedFont.url,selectedFont.name);}if(!ready){const r=await fetch(state.midiUrl);if(!r.ok)throw Error('MIDI konnte nicht geladen werden.');player.loadMidi(await r.arrayBuffer());ready=true}await player.play();$('playerStatus').textContent='Wiedergabe · '+player.soundFontName}catch(e){$('playerStatus').textContent='Player: '+e.message}finally{loading=false;$('font').disabled=false;$('defaultFont').disabled=false;$('play').disabled=!state.midiUrl;}};
+$('play').onclick=async()=>{if(loading)return;loading=true;$('font').disabled=true;$('defaultFont').disabled=true;$('play').disabled=true;try{await player.init();if(!player.sf){await fontRestore;if(!selectedFont)await restoreSoundFont();if(!selectedFont)throw Error('Gespeicherter Klang ist nicht erreichbar. Bitte erneut versuchen.');if(selectedFont.standard){await player.loadSoundFont(selectedFont.url,selectedFont.name);}else{const version=fontCache.version(selectedFont);let blob=preparedFontVersion===version?preparedFont:null;if(!blob){try{blob=await (fontPreparing||prepareSoundFont(selectedFont));}catch{blob=await prepareSoundFont(selectedFont);}}$('playerStatus').textContent='Klang wird vorbereitet: '+selectedFont.name;await player.loadSoundFontBuffer(await blob.arrayBuffer(),selectedFont.name);}}if(!ready){const r=await fetch(state.midiUrl);if(!r.ok)throw Error('MIDI konnte nicht geladen werden.');player.loadMidi(await r.arrayBuffer());ready=true}await player.play();$('playerStatus').textContent='Wiedergabe · '+player.soundFontName}catch(e){runClient.record(state.runId,'player_error',e.message);$('playerStatus').textContent='Player: '+e.message}finally{loading=false;$('font').disabled=false;$('defaultFont').disabled=false;$('play').disabled=!state.midiUrl;}};
 $('pause').onclick=()=>player.pause();$('stop').onclick=()=>player.stop();$('position').oninput=()=>player.seek(Number($('position').value));$('volume').oninput=()=>player.setMasterVolume($('volume').value);$('saveMidi').onclick=()=>{if(state.midiUrl)location.href=state.midiUrl};
 $('font').onchange=async e=>{const f=e.target.files[0];if(!f||loading)return;loading=true;$('font').disabled=true;$('defaultFont').disabled=true;$('play').disabled=true;$('playerStatus').textContent='SoundFont wird geladen: '+f.name;try{fontRevision++;await player.init();const buffer=await f.arrayBuffer();await player.loadSoundFontBuffer(buffer.slice(0),f.name);try{await saveSoundFont(buffer,f.name);$('playerStatus').textContent='Klang gespeichert: '+f.name;}catch(e){runClient.record(state.runId,'api_error','SoundFont speichern: '+e.message);$('playerStatus').textContent='Klang geladen, aber nicht gespeichert: '+e.message;}}catch(e){$('playerStatus').textContent=e.message}finally{e.target.value='';loading=false;$('font').disabled=false;$('defaultFont').disabled=false;$('play').disabled=!state.midiUrl;}};
-$('defaultFont').onclick=async()=>{if(loading)return;loading=true;$('font').disabled=true;$('defaultFont').disabled=true;$('play').disabled=true;try{fontRevision++;await player.init();await player.loadSoundFont('/TimGM6mb.sf2','TimGM6mb');selectedFont=await api('/api/soundfont',null,'DELETE');$('playerStatus').textContent='Klang gespeichert: TimGM6mb'}catch(e){$('playerStatus').textContent=e.message}finally{loading=false;$('font').disabled=false;$('defaultFont').disabled=false;$('play').disabled=!state.midiUrl;}};
+$('defaultFont').onclick=async()=>{if(loading)return;loading=true;$('font').disabled=true;$('defaultFont').disabled=true;$('play').disabled=true;try{fontRevision++;await player.init();await player.loadSoundFont('/TimGM6mb.sf2','TimGM6mb');selectedFont=await api('/api/soundfont',null,'DELETE');preparedFont=null;preparedFontVersion='';fontPreparing=null;await fontCache.clear();$('playerStatus').textContent='Klang gespeichert: TimGM6mb'}catch(e){$('playerStatus').textContent=e.message}finally{loading=false;$('font').disabled=false;$('defaultFont').disabled=false;$('play').disabled=!state.midiUrl;}};
 let installPrompt;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e});$('installApp').onclick=async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null}else{$('installHelp').hidden=false;$('installHelp').textContent='Android: Browser-Menü → App installieren. iPad: Safari → Teilen → Zum Home-Bildschirm. Danach über das Icon starten.'}};
 if(matchMedia('(display-mode: standalone)').matches||navigator.standalone)$('installApp').hidden=true;
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).catch(()=>{});
