@@ -67,3 +67,13 @@ assert.deepEqual(await keys('anchorless-corrected.mid'),await keys('anchorless-a
 for(const source of ["\\new PianoStaff \\relative { c'4 d e f }",absSpelling.replace('PianoStaff','Staff'),absSpelling.replace('\\relative {','\\relative c {')])assert.equal(repairAbsoluteSpelling(source),null);
 const mixed=absSpelling.replace("left = \\relative {", "left = \\relative {").replace(/left = \\relative \{[\s\S]*?\n\}/,"left = \\relative { \\clef bass c4 d e f }");const mixedFixed=repairAbsoluteSpelling(mixed);assert(mixedFixed);assert(mixedFixed.code.includes('left = \\relative { \\clef bass c4 d e f }'));
 console.log('PASS: anchorless first pitch and accent arrows; local drift repair matches actual LilyPond absolute MIDI including chords and grace notes; healthy blocks unchanged, unsupported/other instruments rejected.');
+const {automaticOctaveRepair}=await import('../src/octave-repair.mjs');
+const piano=[{status:'checked',program:0,channel:0,low:21,high:108}];
+const absoluteLow="\\score { { c,,,,4 d,,,, e,,,, f,,,, } \\layout {} \\midi {} }";assert.equal(automaticOctaveRepair(absoluteLow,piano).code,absoluteLow.replaceAll(',,,,',',,'));
+const relativeLow="\\relative c,,, { c4 d e f }";const lowFix=automaticOctaveRepair(relativeLow,piano);assert(lowFix.code);assert.deepEqual(relativeOctavePlan(lowFix.code).map(t=>t.octave),[1,1,1,1]);assert(octaveOnlyChange(relativeLow,lowFix.code));
+const duet=String.raw`upper = \relative { c''4 d e f }
+lower = \relative { c,,,,4 d e f }
+\score { << \new Staff \with { midiInstrument = "cello" } \upper \new Staff \with { midiInstrument = "acoustic grand" } \lower >> \midi {} }`;
+const duetFix=automaticOctaveRepair(duet,[{status:'checked',program:42,channel:0,low:36,high:81},...piano],[{channel:0}]);assert(duetFix.code,duetFix.error);const duetNotes=relativeOctavePlan(duetFix.code);assert.deepEqual(duetNotes.filter(t=>t.block===0).map(t=>t.octave),[4,4,4,4]);assert.deepEqual(duetNotes.filter(t=>t.block===1).map(t=>t.octave),[1,1,1,1]);
+assert(automaticOctaveRepair("\\relative c' { << c4 e >> }",piano).error);assert(automaticOctaveRepair("c,,,,4",[{status:'unknown',low:null,high:null}]).error);
+console.log('PASS: app-only absolute/relative range correction, uniform interval preservation, cello/piano assignment and register correction; ambiguous/unsupported music fails explicitly.');

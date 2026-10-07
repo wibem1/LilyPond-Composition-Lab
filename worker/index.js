@@ -1,8 +1,8 @@
-const VERSION="0.1.20";
+const VERSION="0.1.21";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
-import {applyOctaveEdits,octaveTokens,relativeOctavePlan,repairAbsoluteSpelling} from '../src/octave-repair.mjs';
+import {automaticOctaveRepair} from '../src/octave-repair.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
 import {expressionPlayback} from '../src/expression-playback.mjs';
 import {streamRun,readRunSession,noteRunProgress} from '../src/run-session.mjs';
@@ -203,53 +203,25 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   }
   else warning='LilyPond erzeugte keine MIDI-Datei.';
   if(performance.mode==='fallback')warning=[warning,'Erweiterte Ausdruckswiedergabe fehlgeschlagen; normale MIDI-Wiedergabe verwendet.'].filter(Boolean).join('\n');
-  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
+  return {url,label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,trillNotesPerSecond:performance.mode==='articulate'?8:null,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
-async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,task=''){
- const instructions='Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Keine Neukomposition. Ändere nur Apostrophe/Kommas an nummerierten Tonangaben, auch relative-Anker. Alle anderen Zeichen bleiben erhalten. WICHTIG: In relative bezeichnet eine Note OHNE Oktavzeichen die nächstliegende diatonische Lage zur VORHERIGEN Note (höchstens eine Quarte entfernt). Apostroph bedeutet von DIESER Lage eine Oktave aufwärts, Komma abwärts, NICHT eine feste absolute Oktave! Wiederholte Apostrophe bewirken kumulative Oktavdrift. Rechne die Tonfolge vom Anker Schritt für Schritt durch, einschließlich Taktgrenzen und Akkorden. Ein Sprung e nach h braucht für eine aufsteigende Quinte genau ein Apostroph; ein schrittweiser Aufstieg e fis g a h braucht KEINE Apostrophe. Für normale Klaviermelodik müssen deshalb die meisten marks=0 sein; weitere Zeichen nur für echte größere Sprünge. Auch Bassfiguren müssen vom jeweils vorherigen Ton aus gerechnet werden, nicht pro Takt neu. Jede Stimme muss in sinnvoller spielbarer Instrumentenlage bleiben. Cello: normaler Kernbereich bis G4, einzelne hohe Spitzentöne erlaubt; ausdrücklich gewünschte hohe Lage erhalten. Relative-Anweisungen, Notennamen, Dauern, Tempo, Titel und Ausdruck unverändert lassen. Nummerierte Liste enthält auch Anker und Tonartangaben; Tonartangaben NICHT ändern. Antworte ausschließlich als JSON mit den notwendigen Änderungen: {"edits":[{"id":12,"marks":0},{"id":19,"marks":-1}]}. marks ist die neue ANZAHL der relativen Oktavzeichen: 0=keine, 1=ein Apostroph, -1=ein Komma. Keine from/to-Textausschnitte, kein Notenvolltext, kein Markdown.';
- let cost=0,working=code,report=compiled,feedback='';
- const local=compiled.rangeCheck?.instruments.every(x=>x.program>=0&&x.program<=7)?repairAbsoluteSpelling(code):null;
- if(local){
-  const started=Date.now(),checked=await compileLilyMidi(env,local.code,title,runId,task);
-  const accepted=!checked.error&&!!checked.url&&checked.rangeCheck?.status==='passed'&&checked.registerCheck?.status!=='warning';
-  await log(env,'korrekturpruefung',runId,{operation:'octave-repair',method:local.method,paidCalls:0,notes:local.notes,accepted,source:local.code,...checked});
-  await log(env,'korrektur',runId,{operation:'octave-repair',method:local.method,accepted,paidCalls:0,durationMs:Date.now()-started});
-  if(accepted){checked.repair='Verwechslung absoluter und relativer Oktavangaben rechnerisch korrigiert; ohne KI-Aufruf. Tonumfang erneut geprüft.';return {code:local.code,compiled:checked,cost:0};}
-  feedback='Rechnerische Korrektur bestand MIDI-Prüfung nicht: '+(checked.error||checked.warning);
- }
-
- for(let attempt=1;attempt<=2;attempt++){
-  const plan=relativeOctavePlan(working);
-  const quick=!!plan||attempt===1;
-  const repairLimit=quick?8000:24000,reasoning={effort:quick?'low':'medium'},repairStarted=Date.now();
-  const targetInstructions='Korrigiere ausschließlich die Oktavlagen der aufgeführten Töne. Wähle für JEDE Tonposition eine sinnvolle absolute Oktave (wissenschaftliche Zählung: mittleres C=C4, Klavier A0–C8). Behalte Melodie, Bassführung, Akkordstruktur und alle Tonklassen; erhalte plausible Oktavverdopplungen in Akkorden. Die aktuelle relative Quelle hat kumulative Oktavdrift. Interpretiere die musikalisch beabsichtigte Lage aus der Stimme, nicht aus den absurd hohen/tiefen aktuellen Oktaven. Für Klavier rechte Hand meist Oktaven 4–6, linke Hand meist 1–4; das sind Orientierungspunkte, keine festen Grenzen. Cello normal bis G4, einzelne höhere Spitzen erlaubt, ausdrücklich gewünschte hohe Lage erhalten. Rechne KEINE relativen Apostrophe oder Kommas aus: Das übernimmt die App exakt. Antworte ausschließlich als JSON {"octaves":[4,5,5,4,...]} mit genau einer absoluten Oktavnummer für jede nummerierte Position, in unveränderter Reihenfolge. Keine Notennamen, keine Quelltextausschnitte, kein Markdown.';
-  const messages=[{role:'system',content:plan?targetInstructions:instructions},{role:'user',content:[report.warning,feedback,working,'Nummerierte Tonangaben (id, Ton, Zeile):\n'+JSON.stringify((plan||octaveTokens(working)).map(({id,token,line})=>({id,token,line})))].filter(Boolean).join('\n\n')}];
-  await log(env,'anfrage',runId,{stage:'realisation',operation:'octave-repair',attempt,model,messages,max_tokens:repairLimit,reasoning_requested:reasoning,output_format:plan?'absolute-octave-targets':'indexed-octave-marks'});
-  try{
-   const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens:repairLimit,reasoning,stream:false,usage:{include:true}})});
-   rejectRedirect(r);const d=await r.json();if(!r.ok)throw Error(d.error?.message||'Oktavkorrektur fehlgeschlagen.');
-   cost+=Number(d.usage?.cost)||0;let content=d.choices?.[0]?.message?.content;
-   if(Array.isArray(content))content=content.filter(x=>x.type==='text').map(x=>x.text).join('\n');
-   await log(env,'antwort',runId,{stage:'realisation',operation:'octave-repair',attempt,model,answer:content,usage:d.usage||null,finish_reason:d.choices?.[0]?.finish_reason,durationMs:Date.now()-repairStarted});
-   if(d.choices?.[0]?.finish_reason==='length')throw Error('Korrekturantwort wurde abgeschnitten.');
-   const candidate=applyOctaveEdits(working,content),checked=await compileLilyMidi(env,candidate,title,runId,task);
-   await log(env,'korrekturpruefung',runId,{operation:'octave-repair',attempt,source:candidate,...checked});
-   if(checked.error||!checked.url)throw Error(checked.error||'Keine MIDI-Datei.');
-   if(checked.rangeCheck?.status!=='passed'||checked.registerCheck?.status==='warning'){
-    working=candidate;report=checked;
-    throw Error('Es verbleiben Fehler in der geprüften Zwischenfassung: '+checked.warning);
-   }
-   checked.repair='Oktavfehler korrigiert; ausschließlich Oktavzeichen geändert und Tonumfang und Celloregister erneut geprüft.';
-   await log(env,'korrektur',runId,{operation:'octave-repair',attempt,accepted:true});
-   return {code:candidate,compiled:checked,cost};
-  }catch(e){
-   feedback=String(e.message).replaceAll(key,'[API-Schlüssel]');
-   await log(env,'korrektur',runId,{operation:'octave-repair',attempt,accepted:false,error:feedback});
-  }
- }
- return {code,compiled:{...compiled,repairFailed:true,warning:compiled.warning+'\nAutomatische Oktavkorrektur nach zwei Prüfungen nicht erfolgreich; Original erhalten.'},cost};
+async function repairOctaves(env,code,title,runId,compiled,task=''){
+ const started=Date.now();let local,checked,error;
+ try{
+  local=automaticOctaveRepair(code,compiled.rangeCheck?.instruments,compiled.registerCheck?.issues||[]);
+  if(local.error)throw Error(local.error);
+  checked=await compileLilyMidi(env,local.code,title,runId,task);
+  await log(env,'korrekturpruefung',runId,{operation:'octave-repair',method:local.method,paidCalls:0,notes:local.notes,changes:local.changes??null,source:local.code,...checked});
+  if(checked.error||!checked.url||checked.rangeCheck?.status!=='passed'||checked.registerCheck?.status==='warning')throw Error(checked.error||checked.warning||'MIDI-Prüfung nicht bestanden.');
+  checked.repair='Oktavlagen rechnerisch korrigiert und MIDI erneut geprüft. Keine KI-Aufrufe, keine KI-Kosten.';
+  await log(env,'korrektur',runId,{operation:'octave-repair',method:local.method,accepted:true,paidCalls:0,durationMs:Date.now()-started});
+  return {code:local.code,compiled:checked,cost:0};
+ }catch(e){error=e.message;}
+ await log(env,'korrektur',runId,{operation:'octave-repair',method:local?.method||'mechanical-instrument-range',accepted:false,paidCalls:0,error,durationMs:Date.now()-started});
+ return {code,compiled:{...compiled,repairFailed:true,warning:[compiled.warning,error,'Original erhalten. Kein KI-Korrekturaufruf gestartet.'].filter(Boolean).join('\n')},cost:0};
 }
+
 async function handle(req,env,ctx){
  const url=new URL(req.url),p=url.pathname;
  if(req.headers.get('Origin')&&req.headers.get('Origin')!==url.origin)return json({error:'Unzulässiger Ursprung.'},403);
@@ -259,6 +231,35 @@ async function handle(req,env,ctx){
  if(req.method==='GET'&&p==='/manifest.webmanifest')return text(JSON.stringify({id:'/',name:'LilyPond Composition Lab',short_name:'LilyPond Composition Lab',lang:'de',start_url:'/',scope:'/',display:'standalone',display_override:['standalone'],background_color:'#182231',theme_color:'#182231',prefer_related_applications:false,icons:[{src:'/icon-192.png',sizes:'192x192',type:'image/png',purpose:'any'},{src:'/icon-512.png',sizes:'512x512',type:'image/png',purpose:'any'},{src:'/icon-maskable-512.png',sizes:'512x512',type:'image/png',purpose:'maskable'}]}),'application/manifest+json');
  if(req.method==='GET'&&ASSETS[p])return text(asset(p),ASSETS[p].type);
  if(!env.BUCKET)return json({error:'Datenspeicher derzeit nicht verfügbar. Bitte später erneut versuchen.'},503);
+
+ if(req.method==='GET'&&p==='/api/soundfont'){
+  const stored=await getJson(env,'settings/soundfont.json');return json(stored?{name:stored.name,bytes:stored.bytes,savedAt:stored.savedAt,url:'/api/soundfont/file'}:{name:'TimGM6mb',url:'/TimGM6mb.sf2',standard:true});
+ }
+ if(req.method==='GET'&&p==='/api/soundfont/file'){
+  const stored=await getJson(env,'settings/soundfont.json'),file=stored?await env.BUCKET.get(stored.key):null;
+  if(!file)return json({error:'Gespeicherter SoundFont nicht gefunden.'},404);
+  return text(file.body,'application/octet-stream');
+ }
+ if(req.method==='POST'&&p==='/api/soundfont'){
+  const max=64*1024*1024;if(Number(req.headers.get('Content-Length'))>max)return json({error:'SoundFont ist größer als 64 MB.'},413);
+  const buffer=await req.arrayBuffer();if(buffer.byteLength>max)return json({error:'SoundFont ist größer als 64 MB.'},413);
+  const data=new Uint8Array(buffer),tag=at=>String.fromCharCode(...data.subarray(at,at+4));
+  if(data.length<12||tag(0)!=='RIFF'||tag(8)!=='sfbk'||new DataView(buffer).getUint32(4,true)+8!==data.length)return json({error:'Bitte eine vollständige SF2-Datei wählen.'},400);
+  const view=new DataView(buffer),lists=new Set();let at=12;
+  while(at+8<=data.length){const size=view.getUint32(at+4,true),end=at+8+size;if(end>data.length)return json({error:'Unvollständige SF2-Datei.'},400);if(tag(at)==='LIST'&&size>=4)lists.add(tag(at+8));at=end+(size%2);}
+  if(at!==data.length||!['INFO','sdta','pdta'].every(t=>lists.has(t)))return json({error:'Die Datei enthält keine vollständige SoundFont-Struktur.'},400);
+
+  const name=decodeURIComponent(req.headers.get('X-SoundFont-Name')||'Eigener SoundFont').replace(/[\x00-\x1f\x7f]/g,'').slice(0,200)||'Eigener SoundFont';
+  const old=await getJson(env,'settings/soundfont.json'),key='soundfonts/'+randomUUID()+'.sf2',savedAt=new Date().toISOString();
+  await env.BUCKET.put(key,data,{httpMetadata:{contentType:'application/octet-stream'}});
+  try{await putJson(env,'settings/soundfont.json',{name,bytes:data.length,key,savedAt});}catch(e){await env.BUCKET.delete(key);throw e;}
+  if(old?.key)try{await env.BUCKET.delete(old.key);}catch{}
+  return json({name,bytes:data.length,savedAt,url:'/api/soundfont/file'});
+ }
+ if(req.method==='DELETE'&&p==='/api/soundfont'){
+  const old=await getJson(env,'settings/soundfont.json');await env.BUCKET.delete('settings/soundfont.json');if(old?.key)try{await env.BUCKET.delete(old.key);}catch{}
+  return json({name:'TimGM6mb',url:'/TimGM6mb.sf2',standard:true});
+ }
  const runIO={read:name=>getJson(env,name),write:(name,data)=>putJson(env,name,data),log:(event,id,data)=>log(env,event,id,data)};
  if(req.method==='POST'&&p==='/api/run-stream'){
   const b=await body(req),id=historyId(b.runId);if(!id)return json({error:'Ungültige Auftragskennung.'},400);
@@ -294,15 +295,14 @@ async function handle(req,env,ctx){
  if(req.method==='GET'&&p==='/api/midi-status'){try{await rendererReady();return json({lilypondInstalled:true,soundfont:'TimGM6mb.sf2',conversion:'LilyPond über Hacklily; MIDI-CSV in der WebApp'})}catch{return json({lilypondInstalled:false})}}
  if(req.method==='POST'&&p==='/api/compile-lilypond'){
   const b=await body(req),code=clean(b.code),runId=safe(b.runId||randomUUID());if(!code.trim())return json({error:'Kein LilyPond-Code vorhanden.'},400);
-  const result=await compileLilyMidi(env,code,compositionFilename(b.title),runId,clean(b.task));await log(env,'kompilierung',runId,{source:code,title:compositionFilename(b.title),...result});return json(result,result.error?422:200);
+  let result=await compileLilyMidi(env,code,compositionFilename(b.title),runId,clean(b.task));await log(env,'kompilierung',runId,{source:code,title:compositionFilename(b.title),...result});if(result.rangeCheck?.instruments.some(x=>x.violations>0)||result.registerCheck?.status==='warning'){const fixed=await repairOctaves(env,code,compositionFilename(b.title),runId,result,clean(b.task));result={...fixed.compiled,code:fixed.code};}return json(result,result.error?422:200);
  }
  if(req.method==='POST'&&p==='/api/repair-octaves'){
   const b=await body(req),code=clean(b.code),task=clean(b.task),title=compositionFilename(b.title),runId=safe(b.runId||randomUUID());
-  const key=normalizeKey(b.key||await storedKey(env)),model=clean(b.model);await checkKey(key);
-  if(!code.trim()||!model.includes('/'))return json({error:'Code und Modell erforderlich.'},400);
+  if(!code.trim())return json({error:'Code erforderlich.'},400);
   let compiled=await compileLilyMidi(env,code,title,runId,task);await log(env,'kompilierung',runId,{source:code,...compiled});
   if(compiled.rangeCheck?.instruments.some(x=>x.violations>0)||compiled.registerCheck?.status==='warning'){
-   const result=await repairOctaves(env,code,title,runId,key,model,8000,compiled,task);return json({...result,runId});
+   const result=await repairOctaves(env,code,title,runId,compiled,task);return json({...result,runId});
   }
   return json({code,compiled,cost:0,runId});
  }
@@ -332,7 +332,7 @@ async function handle(req,env,ctx){
  if(req.method==='GET'&&p==='/api/diagnosis'){
   const runId=safe(url.searchParams.get('runId')||''),session=await readRunSession(runId,runIO),objects=await listAll(env,'logs/'+runId+'/');const entries=await Promise.all(objects.map(o=>getJson(env,o.key)));entries.sort((a,b)=>a.date.localeCompare(b.date));if(!entries.length)return json({error:'Kein Protokoll gefunden.'},404);
   const costs={composition:0,realisation:0,total:0};for(const e of entries){const c=Number(e.usage?.cost);if(Number.isFinite(c)){if(e.stage==='composition')costs.composition+=c;if(e.stage==='realisation')costs.realisation+=c;costs.total+=c}}
-  return text(JSON.stringify({app:'LilyPond Composition Lab',version:VERSION,createdAt:new Date().toISOString(),runId,costs,runStatus:session?{status:session.status,phase:session.phase,startedAt:session.startedAt,updatedAt:session.updatedAt}:null,entries},null,2),'application/json; charset=utf-8',{'Content-Disposition':`attachment; filename="Diagnose-${runId}.json"`});
+  return text(JSON.stringify({app:'LilyPond Composition Lab',version:VERSION,createdAt:new Date().toISOString(),runId,costs,playback:{soundfont:(await getJson(env,'settings/soundfont.json'))?.name||'TimGM6mb',trillDefaultNotesPerSecond:8,existingMidiRequiresRecompile:true},runStatus:session?{status:session.status,phase:session.phase,startedAt:session.startedAt,updatedAt:session.updatedAt}:null,entries},null,2),'application/json; charset=utf-8',{'Content-Disposition':`attachment; filename="Diagnose-${runId}.json"`});
  }
  if(req.method==='POST'&&p==='/api/run')return run(req,env);
  return json({error:'Nicht gefunden'},404);
@@ -414,7 +414,7 @@ async function run(req,env){
   let compiled=code?await compileLilyMidi(env,code,title,runId,task):{error:'Die KI lieferte keinen LilyPond-Code.'};
   await log(env,'kompilierung',runId,{source:code,...compiled});
   if(compiled.rangeCheck?.instruments.some(x=>x.violations>0)||compiled.registerCheck?.status==='warning'){
-   const repaired=await repairOctaves(env,code,title,runId,key,model,max_tokens,compiled,task);
+   const repaired=await repairOctaves(env,code,title,runId,compiled,task);
    code=repaired.code;compiled=repaired.compiled;base.techout=code;base.costs.realisation+=repaired.cost;
   }
   if(code)downloads.push({label:'LilyPond-Datei',url:await saveFile(env,title,'ly',code)});

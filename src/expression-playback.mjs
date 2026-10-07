@@ -1,6 +1,6 @@
 // Render the untouched score and a separate, articulated MIDI-only score.
 // Mask strings/comments/Scheme so braces and commands in them are never edited.
-function mask(source){
+export function mask(source){
  const out=source.split('');let i=0;
  const blank=(a,b)=>{for(let p=a;p<b;p++)if(out[p]!=='\n')out[p]=' ';};
  while(i<source.length){const start=i;
@@ -17,6 +17,21 @@ const prelude=String.raw`
 \include "articulate.ly"
 % Keep unmarked notes almost full length; slurs and tenuto retain full length.
 #(set! ac:normalFactor '(15 . 16))
+% Use a moderate trill rate in real time, independent of the piece's tempo.
+% Only the trill expansion is affected; other grace/ornament timing stays intact.
+#(define lab:originalTwiddletime ac:twiddletime)
+#(define lab:originalTrill ac:trill)
+#(define lab:playingTrill #f)
+#(set! ac:twiddletime
+  (lambda (music)
+    (if lab:playingTrill (/ ac:currentTempo 480)
+        (lab:originalTwiddletime music))))
+#(set! ac:trill
+  (lambda (music)
+    (dynamic-wind
+      (lambda () (set! lab:playingTrill #t))
+      (lambda () (lab:originalTrill music))
+      (lambda () (set! lab:playingTrill #f)))))
 #(define (lab-expression-words value)
    (cond ((string? value) (list value))
          ((pair? value) (append-map lab-expression-words value))

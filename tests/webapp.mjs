@@ -31,7 +31,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.20'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.21'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -73,28 +73,14 @@ assert.equal(requests[migrationIndex].messages[0].content,originalPrompt);assert
 rendererMidi=driftMidi;
 const drift=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Oktavtest',runId:'88889999aaaabbbb'}});
 assert(drift.warning.includes('Tonumfang prüfen'));assert(drift.url);assert.equal((await call(drift.url)).status,200);assert(drift.pages.length);rendererMidi=null;
-// Repair runs only after detected range violations; costs are logged separately.
-rendererMidi=driftMidi;repairMidi=(await readFile(new URL('./fixtures/luna-octaves-corrected.mid',import.meta.url))).toString('base64');repairAnswer=JSON.stringify({edits:[{id:0,marks:2}]});namingDown=true;
-const repairIndex=requests.length;
-const repaired=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd1111'}});
-assert.equal(repaired.answer,answer.replace("c'4","c''4"));assert.equal(repaired.rawAnswer,answer);assert.equal(repaired.compiled.rangeCheck.status,'passed');assert(repaired.compiled.repair);assert.equal(repaired.costs.realisation,.0001);
-assert.equal(requests[repairIndex].messages.length,2);assert(requests.some(r=>r.messages[0].content.startsWith('Repariere ausschließlich')));
-const rd=await (await call('/api/diagnosis?runId=aaaaccccdddd1111')).json();assert.equal(rd.costs.realisation,.0001);assert(rd.entries.some(e=>e.event==='korrektur'&&e.accepted===true));
-assert.equal((await value('/api/history/'+repaired.historyId)).entry.techout,answer.replace("c'4","c''4"));assert.equal((await value('/api/workspace')).workspace.costs.realisation,.0001);
-// A candidate changing the music is rejected and cannot overwrite the original.
-repairAnswer=JSON.stringify({edits:[{from:"c'4",to:"d''4"}]});const unsafe=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd2222'}});assert.equal(unsafe.answer,answer);assert(unsafe.compiled.repairFailed);assert(unsafe.compiled.warning.includes('Original erhalten'));assert.equal(unsafe.costs.realisation,.0002);
-repairFinish='length';repairAnswer=JSON.stringify({edits:[{id:0,marks:2}]});const truncated=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd5555'}});assert.equal(truncated.answer,answer);assert(truncated.compiled.repairFailed);repairFinish='stop';
-assert.equal(requests.find(r=>r.messages[0].content.startsWith('Repariere ausschließlich')).reasoning.effort,'low');assert.equal(requests.find(r=>r.messages[0].content.startsWith('Repariere ausschließlich')).max_tokens,8000);assert(!('reasoning' in requests[0]));
-// An octave-only candidate which remains out of range is also rejected.
-repairMidi=null;repairAnswer=JSON.stringify({edits:[{id:0,marks:2}]});const stillBad=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd3333'}});assert.equal(stillBad.answer,answer);assert(stillBad.compiled.warning.includes('Original erhalten'));
-// Register drift triggers repair even when the absolute playable range passes.
-const celloFixture=JSON.parse(await readFile(new URL('./fixtures/cello-register-events.json',import.meta.url),'utf8'));
-rendererMidi=celloFixture.original.midiBase64;repairMidi=celloFixture.corrected.midiBase64;repairAnswer=JSON.stringify({edits:[{id:0,marks:2}]});
-const registerFixed=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd4444'}});
-assert(registerFixed.compiled.repair);assert.equal(registerFixed.compiled.rangeCheck.status,'passed');assert.equal(registerFixed.compiled.registerCheck.status,'passed');assert.equal(registerFixed.costs.realisation,.0001);
-const manual=await value('/api/repair-octaves',{method:'POST',data:{code:answer,model:'test/model',runId:'aaaaccccdddd6666'}});assert(manual.compiled.repair);assert.equal(manual.code,answer.replace("c'4","c''4"));assert.equal(manual.cost,.0001);
-repairMidi=null;
-rendererMidi=null;repairAnswer=null;namingDown=false;
+// A MIDI violation not explained by source pitches is reported, never sent to AI.
+rendererMidi=driftMidi;namingDown=true;
+const mechanical=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd1111'}});
+assert.equal(mechanical.answer,answer);assert(mechanical.compiled.repairFailed);assert.equal(mechanical.costs.realisation,0);
+const md=await value('/api/diagnosis?runId=aaaaccccdddd1111');assert.equal(md.costs.realisation,0);assert(md.entries.some(e=>e.event==='korrektur'&&e.paidCalls===0&&!e.accepted));
+const noKeyPaid=paid;
+const keyless=await value('/api/repair-octaves',{method:'POST',data:{code:answer,runId:'aaaaccccdddd6666'}});assert.equal(keyless.cost,0);assert.equal(paid,noKeyPaid);
+rendererMidi=null;repairMidi=null;namingDown=false;
 rendererDown=true;const count=paid;assert.equal((await call('/api/run',{method:'POST',data:{...data,runId:'aaaabbbbccccdddd'}})).status,412);assert.equal(paid,count);assert.equal((await call('/api/diagnosis?runId=aaaabbbbccccdddd')).status,200);
 await value('/api/workspace',{method:'POST',data:{workspace:{...ws,key:'DO-NOT-SAVE'}}});assert(!JSON.stringify(await value('/api/workspace')).includes('DO-NOT-SAVE'));
 await value('/api/history/'+result.historyId,{method:'DELETE'});assert.equal((await call('/api/history/'+result.historyId)).status,404);
@@ -105,12 +91,6 @@ console.log('PASS: direct composition, editable system, no reasoning throttle, e
 rendererDown=false;rendererMidi=null;repairMidi=null;compositionFinish='length';const paidBeforeCut=paid;const cut=await value('/api/run',{method:'POST',data:{...data,key:"sk-or-v1-TESTKEY",maxTokens:8000,runId:'aaaaccccdddd7777'}});
 assert.equal(paid,paidBeforeCut+1);assert.equal(requests.at(-1).max_tokens,64000);assert(!('reasoning' in requests.at(-1)));assert(cut.compiled.incomplete);assert(cut.compiled.error.includes('abgeschnitten'));assert.equal(cut.rawAnswer,answer);assert(!cut.compiled.url);assert(!cut.compiled.pages);assert.equal((await value('/api/history/'+cut.historyId)).entry.techout,answer);assert((await value('/api/workspace')).workspace.compiler.includes('abgeschnitten'));assert.equal(cut.costs.composition,.0001);assert.equal(cut.costs.realisation,0);assert.equal(cut.downloads.length,1);compositionFinish='stop';
 console.log('PASS: legacy 8000 budget raised to 64000; explicit 24000 retained; truncated answer and costs preserved without naming, compiler or repair calls.');
-
-const repairCalls=requests.filter(r=>r.messages[0].content.startsWith('Repariere ausschließlich'));assert(repairCalls.some(r=>r.reasoning.effort==='medium'&&r.max_tokens===24000));assert(repairCalls.some(r=>r.reasoning.effort==='low'&&r.max_tokens===8000));console.log('PASS: fast initial correction, deeper fallback only after failed validation.');
-
-rendererMidi=driftMidi;repairMidi=(await readFile(new URL('./fixtures/luna-octaves-corrected.mid',import.meta.url))).toString('base64');repairAnswer=JSON.stringify({octaves:[6]});
-const relativeManual=await value('/api/repair-octaves',{method:'POST',data:{key:'sk-or-v1-TESTKEY',code:"\\score { \\relative c' { c'4 } \\layout {} \\midi {} }",model:'test/model',runId:'aaaaccccdddd8888'}});assert(relativeManual.compiled.repair);assert(relativeManual.code.includes("c''4"));assert(requests.at(-1).messages[0].content.startsWith('Korrigiere ausschließlich'));assert.equal(requests.at(-1).reasoning.effort,'low');
-console.log('PASS: Worker uses absolute target protocol and mechanical relative encoding before MIDI validation.');
 
 rendererMidi=null;repairMidi=null;compileError=false;
 const expressionCompiled=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Expression test',runId:'abcdef1234567890'}});assert.equal(expressionCompiled.expressionPlayback.mode,'articulate');
@@ -138,8 +118,8 @@ console.log('PASS: shipped stream/status/events routes persist result, avoid dup
 const {repairAbsoluteSpelling}=await import('../src/octave-repair.mjs');
 const localOriginal=await readFile(new URL('./fixtures/anchorless-absolute-spelling.ly',import.meta.url),'utf8');const localFixed=repairAbsoluteSpelling(localOriginal);
 localRepairSource=localFixed.code.match(/c''4[^\n]+/)[0];localRepairMidi=(await readFile(new URL('./fixtures/anchorless-corrected.mid',import.meta.url))).toString('base64');rendererMidi=driftMidi;repairMidi=null;
-const localPaid=paid;const localResult=await value('/api/repair-octaves',{method:'POST',data:{key:'sk-or-v1-TESTKEY',model:'test/model',runId:'aa0011223344556677',code:localOriginal}});
-assert.equal(paid,localPaid);assert.equal(localResult.code,localFixed.code);assert.equal(localResult.cost,0);assert.equal(localResult.compiled.rangeCheck.status,'passed');assert(localResult.compiled.repair.includes('ohne KI-Aufruf'));
+const localPaid=paid;const autoLocal=await value('/api/compile-lilypond',{method:'POST',data:{code:localOriginal,runId:'aa0011223344556676'}});assert.equal(autoLocal.code,localFixed.code);assert.equal(autoLocal.rangeCheck.status,'passed');assert.equal(paid,localPaid);const localResult=await value('/api/repair-octaves',{method:'POST',data:{key:'sk-or-v1-TESTKEY',model:'test/model',runId:'aa0011223344556677',code:localOriginal}});
+assert.equal(paid,localPaid);assert.equal(localResult.code,localFixed.code);assert.equal(localResult.cost,0);assert.equal(localResult.compiled.rangeCheck.status,'passed');assert(localResult.compiled.repair.includes('Keine KI-Aufrufe'));
 const localDiag=await value('/api/diagnosis?runId=aa0011223344556677');assert(localDiag.entries.some(e=>e.event==='korrektur'&&e.paidCalls===0&&e.accepted===true));
 localRepairSource=null;rendererMidi=null;
 // Short thinking is explicit, retained in memory/history and logged; default stays unrestricted.
@@ -149,3 +129,18 @@ const shortRequest=requests.findLast(r=>r.messages[0].content==='MY EDITED SYSTE
 assert.equal((await value('/api/workspace')).workspace.compositionReasoning,'short');assert.equal((await value('/api/history/'+shortRun.historyId)).entry.compositionReasoning,'short');
 assert((await value('/api/diagnosis?runId=aa0011223344556688')).entries.some(e=>e.event==='anfrage'&&e.stage==='composition'&&e.reasoning_requested.max_tokens===2048));
 console.log('PASS: shipped local repair costs zero AI calls and passes MIDI range; explicit short thinking, unchanged note budget, saved selection and diagnostic trace.');
+
+// Actual SF2 bytes survive a fresh read; malformed replacement leaves the bank intact.
+const sf=await (await call('/TimGM6mb.sf2')).arrayBuffer();
+const fontPost=async(buffer,name='Saved piano.sf2',origin)=>worker.fetch(new Request('https://lab.test/api/soundfont',{method:'POST',headers:{'X-SoundFont-Name':encodeURIComponent(name),...(origin?{Origin:origin}:{})},body:buffer}),env,{});
+const fsaved=await fontPost(sf);assert.equal(fsaved.status,200);assert.equal((await fsaved.json()).name,'Saved piano.sf2');
+assert.equal((await value('/api/soundfont')).name,'Saved piano.sf2');assert.deepEqual(new Uint8Array(await (await call('/api/soundfont/file')).arrayBuffer()),new Uint8Array(sf));
+assert.equal((await fontPost(sf.slice(0,20),'Bad font.sf2')).status,400);assert.equal((await value('/api/soundfont')).name,'Saved piano.sf2');
+assert.equal((await fontPost(sf,'Other.sf2','https://other.test')).status,403);
+const savedFontKey=JSON.parse(new TextDecoder().decode(env.BUCKET.items.get('settings/soundfont.json').data)).key;
+await fontPost(sf,'Second piano.sf2');assert(!env.BUCKET.items.has(savedFontKey));assert.equal((await value('/api/soundfont')).name,'Second piano.sf2');
+assert.equal((await value('/api/diagnosis?runId=aa0011223344556688')).playback.soundfont,'Second piano.sf2');
+await value('/api/soundfont',{method:'DELETE'});assert((await value('/api/soundfont')).standard);assert.equal((await call('/api/soundfont/file')).status,404);
+console.log('PASS: real SoundFont bytes saved and restored, replacement cleanup, malformed upload preserves previous choice, origin guard, diagnosis and saved default reset.');
+
+assert(!requests.some(r=>/^(Repariere ausschließlich|Korrigiere ausschließlich)/.test(r.messages[0].content)));assert(!html.includes('id="repair"'));console.log('PASS: no octave repair AI requests anywhere, automatic compile correction and no repair button.');

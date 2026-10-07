@@ -1,3 +1,4 @@
+import {mask as musicMask} from './expression-playback.mjs';
 // Permit only octave marks attached to Dutch LilyPond pitch tokens.
 // Keep strings, comments, commands, durations, articulations and all other text.
 function fingerprint(source){
@@ -55,11 +56,11 @@ const degree=t=>'cdefgab'.indexOf(t[0]);
 const marks=t=>(t.match(/'/g)||[]).length-(t.match(/,/g)||[]).length;
 const nearest=(reference,d)=>reference+((d-reference%7+10)%7)-3;
 function closingBrace(source,start){let depth=0;for(let i=start;i<source.length;i++){if(source[i]==='{')depth++;if(source[i]==='}'&&!--depth)return i;}return -1;}
-// Deliberately bounded: complex simultaneous/nested music stays with the legacy
-// repair path. A recognized sequential relative block is encoded mechanically.
+// Deliberately bounded: complex simultaneous/nested music stays on the
+// explicit-failure path. Recognized sequential relative blocks are encoded mechanically.
 export function relativeOctavePlan(source){
  if(/\\include\b|\\language\s+"(?!nederlands")/.test(source))return null;
- let masked=String(source).replace(/"(?:\\.|[^"\\])*"|%\{[\s\S]*?%\}|%[^\n]*/g,m=>' '.repeat(m.length));
+ let masked=musicMask(String(source));
  const blocks=[];let lastEnd=-1;
  for(const match of masked.matchAll(/\\relative\s+(?:((?:es|as|[a-g](?:isis|eses|is|es)?)[',]*)\s*)?\{/g)){
   const start=match.index+match[0].length-1,end=closingBrace(masked,start);if(end<0||start<lastEnd)return null;
@@ -84,7 +85,7 @@ export function relativeOctavePlan(source){
    }
    const absoluteFirst=reference===null;
    const pitch=absoluteFirst?degree(token.token)+(3+marks(token.token))*7:nearest(reference,degree(token.token))+marks(token.token)*7;
-   plan.push({...token,id:plan.length,block,anchor:b.anchor,absoluteFirst,chordFirst:chord&&first===null,chord,octave:Math.floor(pitch/7)});
+   plan.push({...token,id:plan.length,block,blockStart:b.start,anchor:b.anchor,absoluteFirst,chordFirst:chord&&first===null,chord,octave:Math.floor(pitch/7)});
    if(chord&&first===null)first=pitch;reference=pitch;cursor=token.end;
   }
  }
@@ -128,4 +129,48 @@ export function repairAbsoluteSpelling(source){
  if(!faulty)return null;
  const code=applyAbsoluteOctaves(source,targets);
  return {code,notes:plan.length,method:'absolute-spelling-in-anchorless-relative'};
+}
+
+const accidental=t=>(t.match(/is/g)||[]).length-(t.match(/es/g)||[]).length-(t.startsWith('as')?1:0);
+const midiKey=(t,octave)=>12*(octave+1)+[0,2,4,5,7,9,11][degree(t)]+accidental(t);
+const gmNames=new Map([[0,'acoustic grand'],[1,'bright acoustic'],[2,'electric grand'],[3,'honky-tonk'],[4,'electric piano 1'],[5,'electric piano 2'],[40,'violin'],[41,'viola'],[42,'cello'],[43,'contrabass'],[46,'orchestral harp'],[47,'timpani'],[56,'trumpet'],[57,'trombone'],[58,'tuba'],[59,'muted trumpet'],[60,'french horn'],[68,'oboe'],[69,'english horn'],[70,'bassoon'],[71,'clarinet'],[72,'piccolo'],[73,'flute']]);
+export function automaticOctaveRepair(source,instruments,registerIssues=[]){
+ if(!instruments?.length||instruments.some(x=>x.status!=='checked'||x.low===null||x.high===null))return {error:'Kein verlässlicher Instrumententonumfang für die automatische Korrektur.'};
+ const spelling=instruments.every(x=>x.program<=5)?repairAbsoluteSpelling(source):null;if(spelling)return spelling;
+ let plan=relativeOctavePlan(source),relative=!!plan;
+ if(!plan){
+  let masked=musicMask(source);
+  if(/\\(?:relative|fixed|transpose|include|chordmode|drummode|language|resetRelativeOctave)\b/.test(masked))return {error:'Diese Notationskonstruktion kann die App noch nicht sicher rechnerisch korrigieren.'};
+  for(const m of [...masked.matchAll(/\\markup\s*\{/g)].reverse()){const at=m.index+m[0].length-1,end=closingBrace(masked,at);if(end<0)return {error:'Unvollständige Textangabe.'};masked=masked.slice(0,m.index)+' '.repeat(end+1-m.index)+masked.slice(end+1);}
+  masked=masked.replace(/\\key\s+(?:es|as|[a-g](?:isis|eses|is|es)?)[',]*/g,m=>' '.repeat(m.length));
+  plan=octaveTokens(masked).map((t,id)=>({...t,id,block:0,octave:3+marks(t.token)}));
+ }
+ if(!plan.length)return {error:'Keine sicher auflösbaren Tonpositionen.'};
+ const homogeneous=instruments.every(x=>x.low===instruments[0].low&&x.high===instruments[0].high&&x.program===instruments[0].program);
+ const targets=plan.map(t=>t.octave);let changes=0;
+ for(const block of [...new Set(plan.map(t=>t.block))]){
+  const notes=plan.filter(t=>t.block===block);let profile=homogeneous?instruments[0]:null;
+  if(!profile&&relative){
+   const prefix=source.slice(0,notes[0].blockStart+1),variable=prefix.match(/([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\\relative(?:\s+[^{}]*)?\s*\{$/)?.[1];
+   if(variable){const staves=[...source.matchAll(/\\new\s+Staff\b/g)];const found=[];
+    for(let i=0;i<staves.length;i++){const staff=source.slice(staves[i].index,staves[i+1]?.index??source.length),name=staff.match(/midiInstrument\s*=\s*"([^"\n]+)"/)?.[1];if([...staff.matchAll(/\\([A-Za-z_][A-Za-z0-9_]*)/g)].some(m=>m[1]===variable)){const match=instruments.find(p=>gmNames.get(p.program)===name);if(match)found.push(match);}}
+    if(found.length&&found.every(p=>p.program===found[0].program))profile=found[0];
+   }
+  }
+  if(!profile)return {error:'Instrument und Tonpositionen lassen sich nicht eindeutig zuordnen. Original erhalten.'};
+  const low=profile.low,high=registerIssues.some(x=>x.channel===profile.channel)?Math.min(profile.high,67):profile.high;
+  const keys=notes.map(t=>midiKey(t.token,t.octave)),lo=Math.min(...keys),hi=Math.max(...keys);
+  const minShift=Math.ceil((low-lo)/12),maxShift=Math.floor((high-hi)/12);
+  // Prefer a uniform octave shift, retaining every interval in the phrase.
+  const shift=minShift<=maxShift?Math.max(minShift,Math.min(maxShift,0)):null;let previous=Math.max(low,Math.min(high,keys[0])),chordFirst=null,wasChord=false;
+  for(let j=0;j<notes.length;j++){
+   const t=notes[j],key=keys[j];if(wasChord&&(!t.chord||t.chordFirst))previous=chordFirst;let target=t.octave;
+   if(shift!==null)target+=shift;
+   else if(key<low||key>high){const octaves=Array.from({length:9},(_,o)=>o).filter(o=>midiKey(t.token,o)>=low&&midiKey(t.token,o)<=high);if(!octaves.length)return {error:'Für diese Tonklasse ist keine spielbare Oktave hinterlegt.'};target=octaves.reduce((best,o)=>Math.abs(midiKey(t.token,o)-previous)<Math.abs(midiKey(t.token,best)-previous)?o:best);}
+   targets[t.id]=target;if(target!==t.octave)changes++;previous=midiKey(t.token,target);if(t.chordFirst)chordFirst=previous;wasChord=t.chord;
+  }
+ }
+ if(!changes)return {error:'Die Bereichsverletzung lässt sich den notierten Tönen nicht sicher zuordnen. Original erhalten.'};
+ const code=relative?applyAbsoluteOctaves(source,targets):applyOctaveEdits(source,JSON.stringify({edits:plan.map(t=>({id:octaveTokens(source).findIndex(p=>p.start===t.start),marks:targets[t.id]-3})).filter((e,i)=>targets[i]!==plan[i].octave)}));
+ return {code,notes:plan.length,changes,method:'mechanical-instrument-range'};
 }

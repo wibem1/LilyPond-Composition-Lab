@@ -18,3 +18,10 @@ assert.equal(off[0].tick,on[1].tick,'slurred note connects');assert.equal(off[5]
 assert.equal(m.events.filter(e=>e.type==='tempo').length,3);assert.equal(basic.events.filter(e=>e.type==='tempo').length,1);
 assert(m.events.filter(e=>e.type==='tempo')[1].value>1000000,'italic ritardando slows playback');assert.equal(m.events.filter(e=>e.type==='tempo')[2].value,1000000,'a tempo restores original');assert(on.at(-1).vel<on[0].vel,'pp quieter than p');
 console.log('PASS: real LilyPond 2.26 MIDI fixtures: slur, tenuto, staccato, accent, dynamics, italic ritardando and a tempo; score separation and lexical masking.');
+const trillSource=await readFile('tests/fixtures/trill-rate.ly','utf8'),trillPerformance=expressionPlayback(trillSource);assert(trillPerformance.code.includes('/ ac:currentTempo 480'));assert(trillPerformance.code.includes('dynamic-wind'));
+assert(trillPerformance.code.includes(trillSource.slice(trillSource.indexOf('\\score')).replace('\\midi {}','')));
+const trillMidi=await load('tests/fixtures/trill-rate.mid'),trillNotes=trillMidi.events.filter(e=>e.type==='on');const slow=trillNotes.filter(e=>e.sec<2),fast=trillNotes.filter(e=>e.sec>=4&&e.sec<4.90908);
+assert.equal(slow.length,16);assert.equal(fast.length,8);assert.deepEqual(slow.map(e=>e.key),Array.from({length:16},(_,i)=>i%2?60:62));assert.deepEqual(fast.map(e=>e.key),Array.from({length:8},(_,i)=>i%2?64:65));
+for(let i=1;i<slow.length;i++)assert(Math.abs(slow[i].sec-slow[i-1].sec-.125)<.00001);for(let i=1;i<fast.length;i++)assert(fast[i].sec-fast[i-1].sec>.11);
+assert(Math.abs(trillMidi.duration-7.63636)<.00001);assert.equal(trillMidi.events.filter(e=>e.type==='tempo').length,2);
+console.log('PASS: actual LilyPond trill and trill-spanner MIDI at 60/132 BPM: 8/8.8 tones per second, unchanged piece timing/tempo and printed score.');
