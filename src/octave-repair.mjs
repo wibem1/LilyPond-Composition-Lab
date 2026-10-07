@@ -147,7 +147,26 @@ export function automaticOctaveRepair(source,instruments,registerIssues=[]){
  }
  if(!plan.length)return {error:'Keine sicher auflösbaren Tonpositionen.'};
  const homogeneous=instruments.every(x=>x.low===instruments[0].low&&x.high===instruments[0].high&&x.program===instruments[0].program);
- const targets=plan.map(t=>t.octave);let changes=0;
+ const targets=plan.map(t=>t.octave);let changes=0;const methods=new Set();
+ const movement=(notes,octaves)=>{
+  let total=0,previous=null,chordFirst=null,wasChord=false;
+  for(let i=0;i<notes.length;i++){
+   const t=notes[i];if(wasChord&&(!t.chord||t.chordFirst))previous=chordFirst;
+   const key=midiKey(t.token,octaves[i]);if(previous!==null)total+=Math.abs(key-previous);
+   if(t.chordFirst)chordFirst=key;previous=key;wasChord=t.chord;
+  }
+  return total;
+ };
+ const unmarkedRelativeOctaves=notes=>{
+  if(!notes.length||notes[0].anchor===null)return null;
+  let reference=notes[0].anchor,first=null,wasChord=false;const octaves=[];
+  for(const t of notes){
+   if(wasChord&&(!t.chord||t.chordFirst)){reference=first;first=null;}
+   const pitch=nearest(reference,degree(t.token));octaves.push(Math.floor(pitch/7));
+   if(t.chordFirst)first=pitch;reference=pitch;wasChord=t.chord;
+  }
+  return octaves;
+ };
  for(const block of [...new Set(plan.map(t=>t.block))]){
   const notes=plan.filter(t=>t.block===block);let profile=homogeneous?instruments[0]:null;
   if(!profile&&relative){
@@ -159,18 +178,40 @@ export function automaticOctaveRepair(source,instruments,registerIssues=[]){
   }
   if(!profile)return {error:'Instrument und Tonpositionen lassen sich nicht eindeutig zuordnen. Original erhalten.'};
   const low=profile.low,high=registerIssues.some(x=>x.channel===profile.channel)?Math.min(profile.high,67):profile.high;
-  const keys=notes.map(t=>midiKey(t.token,t.octave)),lo=Math.min(...keys),hi=Math.max(...keys);
-  const minShift=Math.ceil((low-lo)/12),maxShift=Math.floor((high-hi)/12);
-  // Prefer a uniform octave shift, retaining every interval in the phrase.
-  const shift=minShift<=maxShift?Math.max(minShift,Math.min(maxShift,0)):null;let previous=Math.max(low,Math.min(high,keys[0])),chordFirst=null,wasChord=false;
-  for(let j=0;j<notes.length;j++){
-   const t=notes[j],key=keys[j];if(wasChord&&(!t.chord||t.chordFirst))previous=chordFirst;let target=t.octave;
-   if(shift!==null)target+=shift;
-   else if(key<low||key>high){const octaves=Array.from({length:9},(_,o)=>o).filter(o=>midiKey(t.token,o)>=low&&midiKey(t.token,o)<=high);if(!octaves.length)return {error:'Für diese Tonklasse ist keine spielbare Oktave hinterlegt.'};target=octaves.reduce((best,o)=>Math.abs(midiKey(t.token,o)-previous)<Math.abs(midiKey(t.token,best)-previous)?o:best);}
-   targets[t.id]=target;if(target!==t.octave)changes++;previous=midiKey(t.token,target);if(t.chordFirst)chordFirst=previous;wasChord=t.chord;
+  const keys=notes.map(t=>midiKey(t.token,t.octave)),outside=keys.filter(k=>k<low||k>high);
+  if(!outside.length)continue;
+
+  // Frequent relative octave marks can create a cumulative octave drift:
+  // every comma/apostrophe is interpreted from the preceding pitch, not from
+  // the clef or the beginning of the bar.  For a clearly broken block, test
+  // the same pitch classes with LilyPond's normal nearest-note relative rule.
+  // Accept this source-level repair only when it fixes the whole block and
+  // markedly reduces the accumulated melodic jumping.
+  if(relative&&notes[0].anchor!==null){
+   const alternative=unmarkedRelativeOctaves(notes);
+   const altKeys=alternative?.map((o,i)=>midiKey(notes[i].token,o))||[];
+   const explicitMarks=notes.filter(t=>marks(t.token)!==0).length;
+   const extreme=keys.some(k=>k<low-12||k>high+12);
+   const enoughEvidence=outside.length>=2&&(explicitMarks>=2)&&(extreme||outside.length>=Math.ceil(notes.length/4));
+   if(enoughEvidence&&altKeys.length===notes.length&&altKeys.every(k=>k>=low&&k<=high)&&movement(notes,alternative)+12<movement(notes,notes.map(t=>t.octave))){
+    for(let i=0;i<notes.length;i++){const t=notes[i],target=alternative[i];targets[t.id]=target;if(target!==t.octave)changes++;}
+    methods.add('relative-marker-drift');continue;
+   }
   }
+
+  // A single uniform octave displacement is safe because it preserves every
+  // interval and the complete contour.  If that cannot solve the block, do
+  // not clamp individual notes into the instrumental range.
+  const lo=Math.min(...keys),hi=Math.max(...keys),minShift=Math.ceil((low-lo)/12),maxShift=Math.floor((high-hi)/12);
+  if(minShift<=maxShift){
+   const shift=Math.max(minShift,Math.min(maxShift,0));
+   if(!shift)return {error:'Die Bereichsverletzung lässt sich nicht durch eine eindeutige Oktavverschiebung beheben. Original erhalten.'};
+   for(const t of notes){targets[t.id]=t.octave+shift;changes++;}
+   methods.add('uniform-source-octave-shift');continue;
+  }
+  return {error:'Oktavfehler erkannt, aber keine sichere quellennahe Korrektur gefunden. Original erhalten.'};
  }
  if(!changes)return {error:'Die Bereichsverletzung lässt sich den notierten Tönen nicht sicher zuordnen. Original erhalten.'};
  const code=relative?applyAbsoluteOctaves(source,targets):applyOctaveEdits(source,JSON.stringify({edits:plan.map(t=>({id:octaveTokens(source).findIndex(p=>p.start===t.start),marks:targets[t.id]-3})).filter((e,i)=>targets[i]!==plan[i].octave)}));
- return {code,notes:plan.length,changes,method:'mechanical-instrument-range'};
+ return {code,notes:plan.length,changes,method:[...methods].join('+')||'source-octave-repair'};
 }
