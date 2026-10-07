@@ -61,13 +61,13 @@ export function relativeOctavePlan(source){
  if(/\\include\b|\\language\s+"(?!nederlands")/.test(source))return null;
  let masked=String(source).replace(/"(?:\\.|[^"\\])*"|%\{[\s\S]*?%\}|%[^\n]*/g,m=>' '.repeat(m.length));
  const blocks=[];let lastEnd=-1;
- for(const match of masked.matchAll(/\\relative\s+((?:es|as|[a-g](?:isis|eses|is|es)?)[',]*)\s*\{/g)){
+ for(const match of masked.matchAll(/\\relative\s+(?:((?:es|as|[a-g](?:isis|eses|is|es)?)[',]*)\s*)?\{/g)){
   const start=match.index+match[0].length-1,end=closingBrace(masked,start);if(end<0||start<lastEnd)return null;
   const body=masked.slice(start,end);
-  if(/\\(?:relative|absolute|fixed|transpose|repeat|alternative|chordmode|drummode|octaveCheck|language|afterGrace)\b|<<|>>|\\\\/.test(body))return null;
-  blocks.push({start,end,anchor:degree(match[1])+(3+marks(match[1]))*7});lastEnd=end;
+  if(/\\(?:relative|absolute|fixed|transpose|repeat|alternative|chordmode|drummode|octaveCheck|language|resetRelativeOctave|afterGrace)\b|<<|>>|\\\\/.test(body))return null;
+  blocks.push({start,end,anchor:match[1]?degree(match[1])+(3+marks(match[1]))*7:null});lastEnd=end;
  }
- if(!blocks.length)return null;
+ if(!blocks.length||blocks.length!==[...masked.matchAll(/\\relative\b/g)].length)return null;
  // Text annotations and key signatures are not sounding notes.
  for(const match of [...masked.matchAll(/\\markup\s*\{/g)].reverse()){
   const start=match.index+match[0].length-1,end=closingBrace(masked,start);if(end<0)return null;
@@ -78,12 +78,13 @@ export function relativeOctavePlan(source){
  for(let block=0;block<blocks.length;block++){
   const b=blocks[block];let reference=b.anchor,first=null,chord=false,cursor=b.start;
   for(const token of octaveTokens(masked).filter(t=>t.start>b.start&&t.end<b.end)){
-   for(const bracket of masked.slice(cursor,token.start).matchAll(/(?<!\\)[<>]/g)){
+   for(const bracket of masked.slice(cursor,token.start).matchAll(/(?<![\\-])[<>]/g)){
     if(bracket[0]==='<'){if(chord)return null;chord=true;first=null;}
     else {if(!chord||first===null)return null;reference=first;chord=false;first=null;}
    }
-   const pitch=nearest(reference,degree(token.token))+marks(token.token)*7;
-   plan.push({...token,id:plan.length,block,anchor:b.anchor,chordFirst:chord&&first===null,chord,octave:Math.floor(pitch/7)});
+   const absoluteFirst=reference===null;
+   const pitch=absoluteFirst?degree(token.token)+(3+marks(token.token))*7:nearest(reference,degree(token.token))+marks(token.token)*7;
+   plan.push({...token,id:plan.length,block,anchor:b.anchor,absoluteFirst,chordFirst:chord&&first===null,chord,octave:Math.floor(pitch/7)});
    if(chord&&first===null)first=pitch;reference=pitch;cursor=token.end;
   }
  }
@@ -97,10 +98,34 @@ export function applyAbsoluteOctaves(source,octaves){
  for(let i=0;i<plan.length;i++){
   const t=plan[i];if(t.block!==block){block=t.block;reference=t.anchor;first=null;wasChord=false;}
   if(wasChord&&(!t.chord||t.chordFirst)){reference=first;first=null;}
-  const target=octaves[i]*7+degree(t.token),offset=(target-nearest(reference,degree(t.token)))/7;
+  const target=octaves[i]*7+degree(t.token),offset=t.absoluteFirst?octaves[i]-3:(target-nearest(reference,degree(t.token)))/7;
   edits.push({...t,to:t.token.replace(/[',]+$/,'')+(offset<0?',':"'").repeat(Math.abs(offset))});
   if(t.chordFirst)first=target;reference=target;wasChord=t.chord;
  }
  let result=source;for(const e of edits.reverse())result=result.slice(0,e.start)+e.to+result.slice(e.end);
  if(!octaveOnlyChange(source,result))throw Error('Nicht ausschließlich Oktavzeichen geändert.');return result;
+}
+
+// Recognize an absolute spelling mistakenly placed inside anchorless relative
+// piano blocks. Require gross drift and a completely playable absolute reading.
+export function repairAbsoluteSpelling(source){
+ if(!/\\new\s+PianoStaff\b/.test(source))return null;
+ const plan=relativeOctavePlan(source);if(!plan||plan.some(t=>t.anchor!==null))return null;
+ const semitones=[0,2,4,5,7,9,11];
+ const key=(t,o)=>12*(o+1)+semitones[degree(t.token)]+((t.token.match(/is/g)||[]).length-(t.token.match(/es/g)||[]).length)-(t.token.startsWith('as')?1:0);
+ const targets=plan.map(t=>3+marks(t.token));
+ if(targets.some((o,i)=>o<0||o>8||key(plan[i],o)<21||key(plan[i],o)>108))return null;
+ const blocks=[...new Set(plan.map(t=>t.block))];let faulty=false;
+ for(const block of blocks){
+  const notes=plan.filter(t=>t.block===block);
+  const bad=notes.filter(t=>key(t,t.octave)<21||key(t,t.octave)>108);
+  if(!bad.length){for(const t of notes)targets[t.id]=t.octave;continue;}
+  if(bad.length){
+   if(notes.filter(t=>marks(t.token)!==0).length<notes.length/2||bad.length<notes.length/4||!bad.some(t=>key(t,t.octave)<-3||key(t,t.octave)>132))return null;
+   faulty=true;
+  }
+ }
+ if(!faulty)return null;
+ const code=applyAbsoluteOctaves(source,targets);
+ return {code,notes:plan.length,method:'absolute-spelling-in-anchorless-relative'};
 }

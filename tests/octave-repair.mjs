@@ -54,3 +54,16 @@ const {parseMidi}=await import('../src/midi-reader.mjs');const graceBuffer=await
 assert.equal(applyAbsoluteOctaves(graceSource.replace("c'4",'c4'),gracePlan.map(t=>t.octave)),graceSource);
 assert.equal(relativeOctavePlan("\\relative c' { \\afterGrace c4 { d16 } }"),null);
 console.log('PASS: actual LilyPond grace/appoggiatura/acciaccatura MIDI agrees with absolute octave plan; fast encoding restores source and afterGrace remains explicitly unsupported.');
+
+const {repairAbsoluteSpelling}=await import('../src/octave-repair.mjs');
+const anchorless="\\relative { \\key c \\minor c''4->( es g c') <g, b d>2 \\acciaccatura as8 g4 }";
+assert.deepEqual(relativeOctavePlan(anchorless).map(t=>t.octave),[5,5,5,7,5,5,6,5,5]);
+const changed=anchorless.replace("c''4","c'''4");assert.equal(applyAbsoluteOctaves(changed,relativeOctavePlan(anchorless).map(t=>t.octave)),anchorless);
+assert.equal(relativeOctavePlan("\\relative c' { c4 } \\relative { d'4 e } \\relative { << c4 e4 >> }"),null);
+const absSpelling=await readFile(new URL('./fixtures/anchorless-absolute-spelling.ly',import.meta.url),'utf8');
+const fixed=repairAbsoluteSpelling(absSpelling);assert(fixed);assert(octaveOnlyChange(absSpelling,fixed.code));assert.equal(repairAbsoluteSpelling(fixed.code),null);
+const keys=async name=>{const b=await readFile(new URL('./fixtures/'+name,import.meta.url));return parseMidi(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength)).events.filter(e=>e.type==='on').map(e=>[e.channel,e.key])};
+assert.deepEqual(await keys('anchorless-corrected.mid'),await keys('anchorless-absolute.mid'));
+for(const source of ["\\new PianoStaff \\relative { c'4 d e f }",absSpelling.replace('PianoStaff','Staff'),absSpelling.replace('\\relative {','\\relative c {')])assert.equal(repairAbsoluteSpelling(source),null);
+const mixed=absSpelling.replace("left = \\relative {", "left = \\relative {").replace(/left = \\relative \{[\s\S]*?\n\}/,"left = \\relative { \\clef bass c4 d e f }");const mixedFixed=repairAbsoluteSpelling(mixed);assert(mixedFixed);assert(mixedFixed.code.includes('left = \\relative { \\clef bass c4 d e f }'));
+console.log('PASS: anchorless first pitch and accent arrows; local drift repair matches actual LilyPond absolute MIDI including chords and grace notes; healthy blocks unchanged, unsupported/other instruments rejected.');

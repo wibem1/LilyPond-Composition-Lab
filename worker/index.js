@@ -1,8 +1,8 @@
-const VERSION="0.1.19";
+const VERSION="0.1.20";
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
-import {applyOctaveEdits,octaveTokens,relativeOctavePlan} from '../src/octave-repair.mjs';
+import {applyOctaveEdits,octaveTokens,relativeOctavePlan,repairAbsoluteSpelling} from '../src/octave-repair.mjs';
 import {initialInstrumentNames} from '../src/notation-layout.mjs';
 import {expressionPlayback} from '../src/expression-playback.mjs';
 import {streamRun,readRunSession,noteRunProgress} from '../src/run-session.mjs';
@@ -131,7 +131,7 @@ async function saveFile(env,title,ext,bytes){
 }
 async function saveHistory(env,b){
  const id=historyId(b.id)||randomUUID().replaceAll('-',''),old=await getJson(env,'history/'+id+'.json')||{};
- const entry={id,createdAt:old.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:{composition:Number(b.costs?.composition)||0,realisation:Number(b.costs?.realisation)||0},tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
+ const entry={id,createdAt:old.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:{composition:Number(b.costs?.composition)||0,realisation:Number(b.costs?.realisation)||0},tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compositionReasoning:b.compositionReasoning==='short'?'short':'default',compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
  await env.BUCKET.put('history/'+id+'.json',JSON.stringify(entry),{httpMetadata:{contentType:'application/json'},customMetadata:{summary:JSON.stringify(historyPublic(entry))}});return historyPublic(entry);
 }
 function validDownloads(d){return Array.isArray(d)?d.filter(x=>typeof x?.url==='string'&&x.url.startsWith('/download/')&&typeof x.label==='string').slice(0,8).map(x=>({label:x.label.slice(0,100),url:x.url.slice(0,500)})):[]}
@@ -209,6 +209,16 @@ async function compileLilyMidi(env,code,title,runId,task=''){
 async function repairOctaves(env,code,title,runId,key,model,maxTokens,compiled,task=''){
  const instructions='Repariere ausschließlich falsche Oktavlagen im vorhandenen LilyPond-Dokument. Keine Neukomposition. Ändere nur Apostrophe/Kommas an nummerierten Tonangaben, auch relative-Anker. Alle anderen Zeichen bleiben erhalten. WICHTIG: In relative bezeichnet eine Note OHNE Oktavzeichen die nächstliegende diatonische Lage zur VORHERIGEN Note (höchstens eine Quarte entfernt). Apostroph bedeutet von DIESER Lage eine Oktave aufwärts, Komma abwärts, NICHT eine feste absolute Oktave! Wiederholte Apostrophe bewirken kumulative Oktavdrift. Rechne die Tonfolge vom Anker Schritt für Schritt durch, einschließlich Taktgrenzen und Akkorden. Ein Sprung e nach h braucht für eine aufsteigende Quinte genau ein Apostroph; ein schrittweiser Aufstieg e fis g a h braucht KEINE Apostrophe. Für normale Klaviermelodik müssen deshalb die meisten marks=0 sein; weitere Zeichen nur für echte größere Sprünge. Auch Bassfiguren müssen vom jeweils vorherigen Ton aus gerechnet werden, nicht pro Takt neu. Jede Stimme muss in sinnvoller spielbarer Instrumentenlage bleiben. Cello: normaler Kernbereich bis G4, einzelne hohe Spitzentöne erlaubt; ausdrücklich gewünschte hohe Lage erhalten. Relative-Anweisungen, Notennamen, Dauern, Tempo, Titel und Ausdruck unverändert lassen. Nummerierte Liste enthält auch Anker und Tonartangaben; Tonartangaben NICHT ändern. Antworte ausschließlich als JSON mit den notwendigen Änderungen: {"edits":[{"id":12,"marks":0},{"id":19,"marks":-1}]}. marks ist die neue ANZAHL der relativen Oktavzeichen: 0=keine, 1=ein Apostroph, -1=ein Komma. Keine from/to-Textausschnitte, kein Notenvolltext, kein Markdown.';
  let cost=0,working=code,report=compiled,feedback='';
+ const local=compiled.rangeCheck?.instruments.every(x=>x.program>=0&&x.program<=7)?repairAbsoluteSpelling(code):null;
+ if(local){
+  const started=Date.now(),checked=await compileLilyMidi(env,local.code,title,runId,task);
+  const accepted=!checked.error&&!!checked.url&&checked.rangeCheck?.status==='passed'&&checked.registerCheck?.status!=='warning';
+  await log(env,'korrekturpruefung',runId,{operation:'octave-repair',method:local.method,paidCalls:0,notes:local.notes,accepted,source:local.code,...checked});
+  await log(env,'korrektur',runId,{operation:'octave-repair',method:local.method,accepted,paidCalls:0,durationMs:Date.now()-started});
+  if(accepted){checked.repair='Verwechslung absoluter und relativer Oktavangaben rechnerisch korrigiert; ohne KI-Aufruf. Tonumfang erneut geprüft.';return {code:local.code,compiled:checked,cost:0};}
+  feedback='Rechnerische Korrektur bestand MIDI-Prüfung nicht: '+(checked.error||checked.warning);
+ }
+
  for(let attempt=1;attempt<=2;attempt++){
   const plan=relativeOctavePlan(working);
   const quick=!!plan||attempt===1;
@@ -317,7 +327,7 @@ async function handle(req,env,ctx){
  if(req.method==='GET'&&p==='/api/workspace')return json({workspace:await getJson(env,'workspace/current.json')});
  if(req.method==='POST'&&p==='/api/workspace'){
   const b=await body(req),w=b.workspace;if(!w||typeof w!=='object'||Array.isArray(w))return json({error:'Ungültiger Arbeitsstand'},400);
-  const entry={title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compiler:clean(w.compiler),pages:validDownloads(w.pages),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||64000),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:{composition:Number(w.costs?.composition)||0,realisation:Number(w.costs?.realisation)||0},downloads:validDownloads(w.downloads),midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};await putJson(env,'workspace/current.json',entry);return json({saved:true});
+  const entry={title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compositionReasoning:w.compositionReasoning==='short'?'short':w.compositionReasoning==='default'?'default':'short',compiler:clean(w.compiler),pages:validDownloads(w.pages),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||64000),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:{composition:Number(w.costs?.composition)||0,realisation:Number(w.costs?.realisation)||0},downloads:validDownloads(w.downloads),midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};await putJson(env,'workspace/current.json',entry);return json({saved:true});
  }
  if(req.method==='GET'&&p==='/api/diagnosis'){
   const runId=safe(url.searchParams.get('runId')||''),session=await readRunSession(runId,runIO),objects=await listAll(env,'logs/'+runId+'/');const entries=await Promise.all(objects.map(o=>getJson(env,o.key)));entries.sort((a,b)=>a.date.localeCompare(b.date));if(!entries.length)return json({error:'Kein Protokoll gefunden.'},404);
@@ -343,8 +353,11 @@ async function run(req,env){
   const requestedTokens=parseInt(b.maxTokens);
   const max_tokens=Math.min(64000,Math.max(500,!requestedTokens||requestedTokens===8000?64000:requestedTokens));
   const messages=[{role:'system',content:system},{role:'user',content:task}];
-  const payload={model,messages,max_tokens,stream:false,usage:{include:true}};
-  await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:'provider_default'});
+  const compositionReasoning=b.compositionReasoning==='short'?'short':'default';
+  if(compositionReasoning==='short'&&max_tokens<=1024)throw Error('Für kurzes Denken bitte ein Tokenbudget von mindestens 1025 wählen. Kein KI-Aufruf gestartet.');
+  const reasoning=compositionReasoning==='short'?{max_tokens:Math.min(2048,max_tokens-1)}:null;
+  const payload={model,messages,max_tokens,stream:false,usage:{include:true},...(reasoning?{reasoning}:{})};
+  await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:reasoning||'provider_default'});
   const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify(payload)});
   rejectRedirect(r);
   const response=await r.json().catch(()=>({error:{message:'Ungültige KI-Antwort'}}));
@@ -360,7 +373,7 @@ async function run(req,env){
   const usage=response.usage?{...response.usage}:null,finish=response.choices?.[0]?.finish_reason||null;
   await log(env,'antwort',runId,{stage:'composition',model,answer,usage,finish_reason:finish,durationMs:Date.now()-started});
   const downloads=[];
-  const base={title:compositionFilename(title),task,system,techout:code,compositionModel:model,format:'lilypond',runId,downloads,costs:{composition:Number(usage?.cost)||0,realisation:0},tokens1:max_tokens};
+  const base={title:compositionFilename(title),task,system,techout:code,compositionModel:model,format:'lilypond',runId,downloads,costs:{composition:Number(usage?.cost)||0,realisation:0},tokens1:max_tokens,compositionReasoning};
   // Persist the original composition before naming or compiling it.
   const saved=await saveHistory(env,base);
   if(finish==='length'){

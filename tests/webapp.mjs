@@ -11,14 +11,14 @@ class MemoryBucket{
 const env={BUCKET:new MemoryBucket(),LAB_KEY_ENCRYPTION_KEY:btoa('01234567890123456789012345678901')};
 const tiny=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-response.json',import.meta.url),'utf8')).result;
 const driftMidi=(await readFile(new URL('./fixtures/luna-octave-drift.mid',import.meta.url))).toString('base64');let rendererMidi=null;
-let expressionError=false;
+let expressionError=false,localRepairSource=null,localRepairMidi=null;
 let paid=0,rendererDown=false,compileError=false,requests=[],rejectKey=false,redirectKey=false;
 let repairAnswer=null,repairMidi=null,repairFinish='stop',compositionFinish='stop';
 let namingAnswers=['Teststück · 2','Nächtlicher Dialog','Dämmerpfade'],namingDown=false;
 const answer='\\version "2.24.3"\n\\header { title = "Teststück" }\n\\score { { c\'4 d\' e\' f\' } \\layout {} \\midi {} }';
 class Socket extends EventTarget{
  accept(){}
- send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:expressionError&&d.params.src.includes('labExpressionText')?{err:'expression failed',logs:'synthetic unsupported expression'}:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
+ send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:localRepairSource&&d.params.src.includes(localRepairSource)?{...tiny,midi:localRepairMidi}:expressionError&&d.params.src.includes('labExpressionText')?{err:'expression failed',logs:'synthetic unsupported expression'}:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
  close(){}
 }
 globalThis.fetch=async(url,opts={})=>{
@@ -31,7 +31,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.19'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.20'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -132,3 +132,20 @@ await value('/api/client-events',{method:'POST',data:{runId:streamedRunId,events
 const streamedDiag=await value('/api/diagnosis?runId='+streamedRunId);assert.equal(streamedDiag.runStatus.status,'completed');assert(streamedDiag.entries.some(e=>e.event==='lauf_abgeschlossen'));assert(streamedDiag.entries.some(e=>e.browserEvent==='network_error'));assert(!JSON.stringify(streamedDiag).includes('SECRET'));
 namingDown=false;
 console.log('PASS: shipped stream/status/events routes persist result, avoid duplicate AI calls, and include server completion, browser fetch failure and redacted recovery events in diagnosis.');
+
+
+// Local recovery of absolute notation inside anchorless relative piano blocks.
+const {repairAbsoluteSpelling}=await import('../src/octave-repair.mjs');
+const localOriginal=await readFile(new URL('./fixtures/anchorless-absolute-spelling.ly',import.meta.url),'utf8');const localFixed=repairAbsoluteSpelling(localOriginal);
+localRepairSource=localFixed.code.match(/c''4[^\n]+/)[0];localRepairMidi=(await readFile(new URL('./fixtures/anchorless-corrected.mid',import.meta.url))).toString('base64');rendererMidi=driftMidi;repairMidi=null;
+const localPaid=paid;const localResult=await value('/api/repair-octaves',{method:'POST',data:{key:'sk-or-v1-TESTKEY',model:'test/model',runId:'aa0011223344556677',code:localOriginal}});
+assert.equal(paid,localPaid);assert.equal(localResult.code,localFixed.code);assert.equal(localResult.cost,0);assert.equal(localResult.compiled.rangeCheck.status,'passed');assert(localResult.compiled.repair.includes('ohne KI-Aufruf'));
+const localDiag=await value('/api/diagnosis?runId=aa0011223344556677');assert(localDiag.entries.some(e=>e.event==='korrektur'&&e.paidCalls===0&&e.accepted===true));
+localRepairSource=null;rendererMidi=null;
+// Short thinking is explicit, retained in memory/history and logged; default stays unrestricted.
+for(const k of [...env.BUCKET.items.keys()])if(k.startsWith('history/'))await env.BUCKET.delete(k);namingDown=false;
+const shortRun=await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',runId:'aa0011223344556688',compositionReasoning:'short'}});
+const shortRequest=requests.findLast(r=>r.messages[0].content==='MY EDITED SYSTEM');assert.deepEqual(shortRequest.reasoning,{max_tokens:2048});assert.equal(shortRequest.max_tokens,24000);
+assert.equal((await value('/api/workspace')).workspace.compositionReasoning,'short');assert.equal((await value('/api/history/'+shortRun.historyId)).entry.compositionReasoning,'short');
+assert((await value('/api/diagnosis?runId=aa0011223344556688')).entries.some(e=>e.event==='anfrage'&&e.stage==='composition'&&e.reasoning_requested.max_tokens===2048));
+console.log('PASS: shipped local repair costs zero AI calls and passes MIDI range; explicit short thinking, unchanged note budget, saved selection and diagnostic trace.');
