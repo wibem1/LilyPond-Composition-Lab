@@ -1,5 +1,7 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.35";
+const VERSION="0.1.36";
+import {ideaMessages,compositionMessages,workflowFields,qualityChoice,reasoningFor,stageRecord} from '../src/composition-workflow.mjs';
+import {exportHistory,importHistory,backupByteLimit} from '../src/history-backup.mjs';
 import {compositionAttribution} from '../src/composition-attribution.mjs';
 import {PAGE,ASSETS} from "./generated.js";
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
@@ -66,7 +68,7 @@ const historyId=v=>/^[a-f0-9]{16,40}$/.test(String(v||''))?v:null;
 function historyPublic(v){
   return {id:v.id,title:v.title||'Unbenannte Komposition',createdAt:v.createdAt,updatedAt:v.updatedAt,hasMidi:!!v.midiUrl,
     compositionModel:v.compositionModel||'',compositionReasoning:v.compositionReasoning||'',realisationModel:v.realisationModel||'',format:v.format||'',
-    hasDraft:!!v.draft,hasRealisation:!!v.techout,costs:compositionCosts(v.costs)};
+    workflow:v.workflow||'direct',hasDraft:!!v.draft,hasRealisation:!!v.techout,costs:compositionCosts(v.costs)};
 }
 async function upstream(url,init,timeout=185000){const ac=new AbortController();const t=setTimeout(()=>ac.abort(),timeout);try{return await fetch(url,{...init,signal:ac.signal});}finally{clearTimeout(t);}}
 function contentType(file){if(file.endsWith('.svg'))return 'image/svg+xml';if(file.endsWith('.mid'))return 'audio/midi';if(file.endsWith('.abc')||file.endsWith('.ly')||file.endsWith('.csv')||file.endsWith('.txt'))return 'text/plain; charset=utf-8';return 'application/octet-stream';}
@@ -133,12 +135,13 @@ async function saveFile(env,title,ext,bytes){
  await env.BUCKET.put('files/'+name,bytes,{httpMetadata:{contentType:contentType(name)}});
  return '/download/'+encodeURIComponent(name);
 }
-async function saveHistory(env,b){
+async function saveHistory(env,b,{restoreDates=false}={}){
  const id=historyId(b.id)||randomUUID().replaceAll('-',''),old=await getJson(env,'history/'+id+'.json')||{};
- const entry={id,createdAt:old.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),actualCompositionModel:clean(b.actualCompositionModel??old.actualCompositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:compositionCosts(b.costs===undefined?old.costs:b.costs),tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compositionReasoning:['short','balanced'].includes(b.compositionReasoning)?b.compositionReasoning:'default',compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
+ const entry={...workflowFields(b),id,createdAt:old.createdAt||(restoreDates&&b.createdAt)||new Date().toISOString(),updatedAt:(restoreDates&&b.updatedAt)||new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),actualCompositionModel:clean(b.actualCompositionModel??old.actualCompositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:compositionCosts(b.costs===undefined?old.costs:b.costs),tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compositionReasoning:['short','balanced'].includes(b.compositionReasoning)?b.compositionReasoning:'default',compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
  await env.BUCKET.put('history/'+id+'.json',JSON.stringify(entry),{httpMetadata:{contentType:'application/json'},customMetadata:{summary:JSON.stringify(historyPublic(entry))}});return historyPublic(entry);
 }
 function validDownloads(d){return Array.isArray(d)?d.filter(x=>typeof x?.url==='string'&&x.url.startsWith('/download/')&&typeof x.label==='string').slice(0,8).map(x=>({label:x.label.slice(0,100),url:x.url.slice(0,500)})):[]}
+function workspaceEntry(w){return {...workflowFields(w),title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compositionReasoning:['short','balanced','default'].includes(w.compositionReasoning)?w.compositionReasoning:'short',compiler:clean(w.compiler),pages:validDownloads(w.pages),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||64000),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:compositionCosts(w.costs),downloads:validDownloads(w.downloads),midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};}
 async function encryptionKey(env){if(!env.LAB_KEY_ENCRYPTION_KEY)throw Error('Schlüsselspeicherung derzeit nicht verfügbar. Key im Eingabefeld verwenden.');return crypto.subtle.importKey('raw',bytes64(env.LAB_KEY_ENCRYPTION_KEY),'AES-GCM',false,['encrypt','decrypt'])}
 function keyInputError(message){const e=Error(message);e.status=400;return e;}
 function normalizeKey(value){
@@ -353,6 +356,25 @@ async function handle(req,env,ctx){
   const obj=await env.BUCKET.get('files/'+name);if(!obj)return json({error:'Datei nicht gefunden'},404);
   return text(obj.body,contentType(name),{'Content-Disposition':`attachment; filename="composition.${name.split('.').pop()}"; filename*=UTF-8''${encodeURIComponent(name)}`});
  }
+
+ if(p==='/api/history-backup'&&['GET','POST'].includes(req.method)){
+  const io={
+   entries:async()=>Promise.all((await listAll(env,'history/')).map(o=>getJson(env,o.key))),
+   workspace:()=>getJson(env,'workspace/current.json'),
+   file:async url=>{const name=decodeURIComponent(url.slice(10));if(/[\\/\x00-\x1f]/.test(name))return null;const file=await env.BUCKET.get('files/'+name);return file?file.arrayBuffer():null;},
+   logs:async id=>{const entries=await Promise.all((await listAll(env,'logs/'+id+'/')).map(o=>getJson(env,o.key)));return entries.filter(Boolean).sort((a,b)=>String(a.date).localeCompare(String(b.date)));},
+   saveFile:(name,ext,bytes)=>saveFile(env,name,ext,bytes),
+   saveEntry:entry=>saveHistory(env,entry,{restoreDates:true}),
+   saveWorkspace:w=>putJson(env,'workspace/current.json',workspaceEntry(w)),
+   saveLogs:async(id,entries)=>{for(const [i,entry] of entries.entries())await putJson(env,'logs/'+id+'/restored-'+i+'.json',entry);}
+  };
+  try{
+   if(req.method==='GET')return text(JSON.stringify(await exportHistory(io)),'application/json; charset=utf-8',{'Content-Disposition':'attachment; filename="LilyPond-Verlauf-'+new Date().toISOString().slice(0,10)+'.json"'});
+   const raw=await req.text();if(utf8.encode(raw).length>backupByteLimit)return json({error:'Sicherungsdatei zu groß (24 MB).'},400);
+   return json(await importHistory(JSON.parse(raw),io));
+  }catch(e){return json({error:e.message||'Verlaufssicherung fehlgeschlagen.'},400);}
+ }
+
  if(req.method==='GET'&&p==='/api/history'){
   const all=await listAll(env,'history/');
   const entries=(await Promise.all(all.map(async o=>{let summary;try{summary=JSON.parse(o.customMetadata?.summary||'null')}catch{}if(!summary)return null;
@@ -369,20 +391,53 @@ async function handle(req,env,ctx){
  if(req.method==='GET'&&p==='/api/workspace')return json({workspace:await getJson(env,'workspace/current.json')});
  if(req.method==='POST'&&p==='/api/workspace'){
   const b=await body(req),w=b.workspace;if(!w||typeof w!=='object'||Array.isArray(w))return json({error:'Ungültiger Arbeitsstand'},400);
-  const entry={title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compositionReasoning:['short','balanced','default'].includes(w.compositionReasoning)?w.compositionReasoning:'short',compiler:clean(w.compiler),pages:validDownloads(w.pages),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||64000),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:compositionCosts(w.costs),downloads:validDownloads(w.downloads),midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};await putJson(env,'workspace/current.json',entry);return json({saved:true});
+  const entry=workspaceEntry(w);await putJson(env,'workspace/current.json',entry);return json({saved:true});
  }
  if(req.method==='GET'&&p==='/api/diagnosis'){
-  const runId=safe(url.searchParams.get('runId')||''),session=await readRunSession(runId,runIO),objects=await listAll(env,'logs/'+runId+'/');const entries=await Promise.all(objects.map(o=>getJson(env,o.key)));entries.sort((a,b)=>a.date.localeCompare(b.date));if(!entries.length)return json({error:'Kein Protokoll gefunden.'},404);
+  const runId=safe(url.searchParams.get('runId')||''),session=await readRunSession(runId,runIO);
+  const histories=await Promise.all((await listAll(env,'history/')).map(o=>getJson(env,o.key)));
+  const related=histories.find(e=>e&&(e.runId===runId||e.ideaStage?.runId===runId||e.compositionStage?.runId===runId));
+  const relatedRunIds=[...new Set([runId,related?.ideaStage?.runId,related?.compositionStage?.runId].filter(Boolean))];
+  const objects=(await Promise.all(relatedRunIds.map(id=>listAll(env,'logs/'+id+'/')))).flat();const entries=await Promise.all(objects.map(o=>getJson(env,o.key)));entries.sort((a,b)=>a.date.localeCompare(b.date));if(!entries.length)return json({error:'Kein Protokoll gefunden.'},404);
   const costs={composition:0,realisation:0,total:0};for(const e of entries){const c=Number(e.usage?.cost);if(Number.isFinite(c)){if(e.stage==='composition')costs.composition+=c;if(e.stage==='realisation')costs.realisation+=c;costs.total+=c}}
-  return text(JSON.stringify({app:'LilyPond Composition Lab',version:VERSION,createdAt:new Date().toISOString(),runId,costs,playback:{soundfont:(await getJson(env,'settings/soundfont.json'))?.name||'TimGM6mb',trillPolicy:'musical-v2',arpeggioPolicy:'rolled-chord-v1',arpeggioStart:'on-beat',trillTargetNotesPerSecond:{min:4,max:10},trillStart:'principal; explicit upper-start override',existingMidiRequiresRecompile:true},runStatus:session?{status:session.status,phase:session.phase,startedAt:session.startedAt,updatedAt:session.updatedAt}:null,entries},null,2),'application/json; charset=utf-8',{'Content-Disposition':`attachment; filename="Diagnose-${runId}.json"`});
+  return text(JSON.stringify({app:'LilyPond Composition Lab',version:VERSION,createdAt:new Date().toISOString(),runId,relatedRunIds,workflow:related?.workflow||'direct',costs,playback:{soundfont:(await getJson(env,'settings/soundfont.json'))?.name||'TimGM6mb',trillPolicy:'musical-v2',arpeggioPolicy:'rolled-chord-v1',arpeggioStart:'on-beat',trillTargetNotesPerSecond:{min:4,max:10},trillStart:'principal; explicit upper-start override',existingMidiRequiresRecompile:true},runStatus:session?{status:session.status,phase:session.phase,startedAt:session.startedAt,updatedAt:session.updatedAt}:null,entries},null,2),'application/json; charset=utf-8',{'Content-Disposition':`attachment; filename="Diagnose-${runId}.json"`});
  }
  if(req.method==='POST'&&p==='/api/run')return run(req,env);
  return json({error:'Nicht gefunden'},404);
 }
-async function run(req,env){
- const b=await body(req),runId=safe(b.runId||randomUUID().replaceAll('-','')),started=Date.now();
+
+async function runConcept(b,env,runId,started){
  let key='';
  try{
+  const task=clean(b.task).trim(),model=clean(b.model).trim(),quality=qualityChoice(b.compositionReasoning);
+  if(!task)throw Error('Kompositionsauftrag fehlt.');if(!model.includes('/'))throw Error('Bitte ein Modell auswählen.');
+  key=normalizeKey(b.key||await storedKey(env));await checkKey(key);
+  const messages=ideaMessages(task,clean(b.system)),reasoning=reasoningFor(quality),max_tokens=Math.min(8000,Math.max(500,Number(b.maxTokens)||8000));
+  await log(env,'anfrage',runId,{stage:'composition',operation:'concept',model,messages,max_tokens,reasoning_requested:reasoning||'provider_default'});
+  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens,stream:false,usage:{include:true},...(reasoning?{reasoning}:{})})});
+  rejectRedirect(r);const response=await r.json();if(!r.ok){const e=Error(response.error?.message||'OpenRouter HTTP '+r.status);e.status=r.status;throw e;}
+  let answer=response.choices?.[0]?.message?.content;if(Array.isArray(answer))answer=answer.filter(x=>x.type==='text').map(x=>x.text).join('\n');answer=typeof answer==='string'?answer.trim():'';
+  const usage=response.usage||null,finishReason=response.choices?.[0]?.finish_reason||'',durationMs=Date.now()-started;
+  await log(env,'antwort',runId,{stage:'composition',operation:'concept',model,actualModel:response.model||model,answer,usage,finish_reason:finishReason,durationMs});
+  if(!answer)throw Error('Die KI lieferte keine Klangvorstellung.');
+  const ideaStage=stageRecord({runId,model,actualModel:response.model||model,quality,task,system:messages[0].content,answer,usage,finishReason,cost:Number(usage?.cost)||0,durationMs});
+  const entry={workflow:'concept',draft:answer,ideaStage,compositionStage:null,title:clean(b.title)||'Unbenannte Komposition',task,system:clean(b.system),techout:'',compositionModel:model,actualCompositionModel:ideaStage.actualModel,compositionReasoning:quality,format:'lilypond',runId,costs:{composition:ideaStage.cost,realisation:0},tokens1:Number(b.maxTokens)||64000,downloads:[],pages:[],midiUrl:''};
+  const saved=await saveHistory(env,entry);await putJson(env,'workspace/current.json',{...entry,id:saved.id,historyId:saved.id});
+  return json({operation:'concept',...entry,historyId:saved.id,durationMs,warning:finishReason==='length'?'Die Klangvorstellung wurde am Ausgabelimit abgeschnitten. Bitte vor dem Fortsetzen bearbeiten.':''});
+ }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{operation:'concept',error,durationMs:Date.now()-started});return json({error,runId},e.status===401?401:502);}
+}
+
+async function run(req,env){
+ const b=await body(req),runId=safe(b.runId||randomUUID().replaceAll('-','')),started=Date.now();
+ if(b.operation==='concept')return runConcept(b,env,runId,started);
+ let key='',conceptEntry=null;
+ try{
+  if(b.workflow==='concept'){
+   const id=historyId(b.historyId);conceptEntry=id?await getJson(env,'history/'+id+'.json'):null;
+   if(!conceptEntry?.ideaStage||conceptEntry.compositionStage||!clean(b.draft).trim())throw Error('Bitte eine gespeicherte Klangvorstellung öffnen oder neu entwickeln.');
+   // Keep the edited intermediate result even if the next provider call fails.
+   conceptEntry={...conceptEntry,draft:clean(b.draft),task:clean(b.task),system:clean(b.system)};await saveHistory(env,conceptEntry);
+  }
   key=normalizeKey(b.key||await storedKey(env));await checkKey(key);const model=clean(b.model).trim();
   if(!key)throw Error('API-Schlüssel fehlt. Bitte unter Verbindung eingeben oder speichern.');
   if(!model.includes('/'))throw Error('Bitte ein Modell auswählen.');
@@ -394,9 +449,9 @@ async function run(req,env){
   const titleContext=[...new Set([...previousTitles,clean(b.title)].filter(t=>t&&!/^Unbenannte[ _]Komposition$/i.test(t)))];
   const requestedTokens=parseInt(b.maxTokens);
   const max_tokens=Math.min(64000,Math.max(500,!requestedTokens||requestedTokens===8000?64000:requestedTokens));
-  const messages=[{role:'system',content:system},{role:'user',content:task}];
+  const messages=compositionMessages(task,system,conceptEntry?clean(b.draft):'');
   const compositionReasoning=['short','balanced'].includes(b.compositionReasoning)?b.compositionReasoning:'default';
-  const reasoning=compositionReasoning==='balanced'?{effort:'medium'}:compositionReasoning==='short'?{effort:'low'}:null;
+  const reasoning=reasoningFor(compositionReasoning);
   const payload={model,messages,max_tokens,stream:false,usage:{include:true},...(reasoning?{reasoning}:{})};
   await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:reasoning||'provider_default'});
   const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify(payload)});
@@ -416,7 +471,8 @@ async function run(req,env){
   await log(env,'antwort',runId,{stage:'composition',model,answer,usage,finish_reason:finish,durationMs:Date.now()-started});
   if(finish!=='length')code=compositionAttribution(code,actualCompositionModel);
   const downloads=[];
-  const base={title:compositionFilename(title),task,system,techout:code,compositionModel:model,actualCompositionModel,format:'lilypond',runId,downloads,costs:{composition:Number(usage?.cost)||0,realisation:0},tokens1:max_tokens,compositionReasoning};
+  const compositionStage=stageRecord({runId,model,actualModel:actualCompositionModel,quality:compositionReasoning,task,system:messages[0].content,answer,finishReason:finish,usage,cost:Number(usage?.cost)||0,durationMs:Date.now()-started});
+  const base={...workflowFields(conceptEntry),compositionStage,id:conceptEntry?.id,draft:conceptEntry?.draft||'',title:compositionFilename(title),task,system,techout:code,compositionModel:model,actualCompositionModel,format:'lilypond',runId,downloads,costs:{composition:(Number(conceptEntry?.costs?.composition)||0)+(Number(usage?.cost)||0),realisation:Number(conceptEntry?.costs?.realisation)||0},tokens1:max_tokens,compositionReasoning};
   // Persist the composition before naming or compiling; raw answer stays in diagnosis.
   const saved=await saveHistory(env,base);
   if(finish==='length'){
@@ -425,7 +481,7 @@ async function run(req,env){
    const entry={...base,id:saved.id,compiler:compiled.error,pages:[],midiUrl:''};
    await saveHistory(env,entry);await putJson(env,'workspace/current.json',{...entry,historyId:saved.id});
    await log(env,'ausgabelimit',runId,{max_tokens,warning:compiled.error});
-   return json({runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,costs:base.costs,finish_reason:finish,compiled,durationMs:Date.now()-started});
+   return json({...entry,...workflowFields(base),draft:base.draft,runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,costs:base.costs,finish_reason:finish,compiled,durationMs:Date.now()-started});
   }
   if(usedKeys.has(titleKey(title))){
    const blocked=titleContext.slice(-40);
@@ -453,7 +509,7 @@ async function run(req,env){
   // Only the title assignment changes; the musical source stays intact.
   if(title!==proposedTitle)code=code.replace(/\btitle\s*=\s*"([^"\n]+)"/,()=>`title = "${title}"`);
   if(usage)usage.cost=(Number(usage.cost)||0)+titleCost;
-  base.title=title;base.techout=code;base.costs.composition+=titleCost;
+  base.title=title;base.techout=code;base.costs.composition+=titleCost;compositionStage.cost+=titleCost;compositionStage.durationMs=Date.now()-started;if(compositionStage.usage)compositionStage.usage.cost=compositionStage.cost;
   let compiled=code?await compileLilyMidi(env,code,title,runId,task):{error:'Die KI lieferte keinen LilyPond-Code.'};
   if(compiled.code){code=compiled.code;base.techout=code;}
   await log(env,'kompilierung',runId,{source:code,...compiled});
@@ -465,7 +521,7 @@ async function run(req,env){
   if(compiled.url)downloads.push({label:'MIDI-Datei',url:compiled.url});
   const entry={...base,id:saved.id,downloads,midiUrl:compiled.url||'',pages:compiled.pages||[],compiler:[compiled.error,compiled.warning,compiled.repair,compiled.logs].filter(Boolean).join('\n')};
   await saveHistory(env,entry);await putJson(env,'workspace/current.json',{...entry,historyId:saved.id});
-  return json({runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,costs:base.costs,titleWarning,finish_reason:finish,compiled,durationMs:Date.now()-started});
+  return json({...entry,...workflowFields(base),draft:base.draft,runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,costs:base.costs,titleWarning,finish_reason:finish,compiled,durationMs:Date.now()-started});
  }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{error,status:e.status||null,providerError:e.providerError?.replaceAll(key||'\u0000','[API-Schlüssel]')||null,durationMs:Date.now()-started});return json({error,runId},e.status===401?401:502)}
 }
 export default {async fetch(request,env,ctx){try{return await handle(request,env,ctx)}catch(e){return json({error:e.name==='AbortError'?'Zeitüberschreitung beim Onlinedienst.':String(e.message||e)},e.status||500)}}};

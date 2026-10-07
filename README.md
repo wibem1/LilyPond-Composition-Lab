@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.35
+# LilyPond Composition Lab v0.1.36
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -172,6 +172,18 @@ Fehler in v0.1.33: Die Optimierung der gesamten Hilfslinienzahl erlaubte eine Li
 Beim erneuten Kompilieren wird eine bereits eingefügte automatische Linie nur dann entfernt und neu beurteilt, wenn das Protokoll exakt denselben uneditierten Code und die erfolgreiche automatische MIDI-Prüfung nachweist. Manuell gesetzte oder anschließend bearbeitete Oktavlinien bleiben erhalten. Quelle: Gerou/Lusk, Essential Dictionary of Music Notation, Abschnitt Octave signs, Seiten 97–101 (https://musescore.org/sites/musescore.org/files/2022-02/EssentialDictionaryOfMusicNotation_0.pdf). Die Linie dient der Vermeidung zahlreicher Hilfslinien, beginnt an der ersten betroffenen Note und überbrückt lediglich kurze Pausen.
 
 Lokale Prüfung des gemeldeten korrigierten Quelltexts: statt Takt 11–24 nur Takt 20–24. Kein neuer Live-Renderer-/Android-Sichttest; die MIDI-Identitätsprüfung vor Übernahme bleibt aktiv.
+
+### v0.1.36 – ausgewählte ComposeMe-Funktionen integriert · 07.10.2026
+
+Der normale Ablauf bleibt die direkte LilyPond-Komposition. Optional unter **Arbeitsweise**: **Klangvorstellung → Komposition**. Der erste KI-Aufruf beschreibt Charakter, Form, Spannung, Gestik, Phrasierung, Dichte und Register ohne Notation. Die Klangvorstellung wird automatisch als fortsetzbarer Verlaufseintrag und Arbeitsstand gespeichert. Sie ist editierbar; **Weiter komponieren** verwendet den tatsächlich bearbeiteten Text und die zu diesem Zeitpunkt gewählte KI sowie Qualitätsstufe. Die erste Phase wird dabei nicht erneut aufgerufen. Der zweite Schritt erzeugt direkt LilyPond und verwendet den bestehenden Compiler, Oktavprüfungen, Notensatz und Player. Dies ist eine Übertragung des Verfahrens, keine byte-identische Wiedergabe der historischen JSON-/MIDI-Engine.
+
+Beide Schritte speichern angefordertes/tatsächliches Modell, Qualitätsstufe, KI-Antwort, Verbrauch, Kosten und Dauer. Die Gesamtanzeige umfasst beide Schritte. Die Diagnose enthält die tatsächlich gesendeten Prompts und Antworten beider Phasen. Ein vor der Ausarbeitung auftretender Compiler-/Providerfehler erhält den bearbeiteten Zwischenstand. Nach einer bereits gespeicherten Notenausgabe wird zum Wiederherstellen nicht automatisch erneut bezahlt; vorhandenen Code öffnen/kompilieren. Direkte Kompositionen erhalten ebenfalls ihren eigenen Schrittnachweis. Fehlende historische Werte werden nicht erfunden.
+
+**Verlauf sichern / Sicherung öffnen** enthält den vollständigen gespeicherten Verlauf und letzten Arbeitsstand einschließlich Klangvorstellungen, LilyPond-Quellen, referenzierten MIDI-/SVG-Dateien und Diagnosen. Ergebnisdateien und Auftragskennungen werden beim Import sicher neu zugeordnet; gespeicherte Modelle, Kosten und Zeitstempel bleiben erhalten. Bestehende Einträge und ein vorhandener Arbeitsstand werden nicht überschrieben. Erneuter Import derselben IDs wird übersprungen. Schlüssel und SoundFonts sind nicht Teil dieser Sicherung. Eine Datei ist auf 24 MB begrenzt, um die Arbeitsspeichergrenze des Servers einzuhalten.
+
+Übernommen wurden der bearbeitbare Klangvorstellungsablauf, das Fortsetzen gespeicherter Zwischenstände und die Verlaufssicherung. ComposeMes historische JSON-/MIDI-Engine, direkte MIDI-Dateierzeugung per Code Interpreter, Mehrformat-Ausgabe und dreistufiges klassisches Verfahren bleiben historische Referenzen. Es wird keine vollständige Funktionsgleichheit oder musikalische Überlegenheit des optionalen Verfahrens behauptet. ComposeMe wird nach technischer Veröffentlichung dieser Integration aus der aktiven Entwicklung genommen; technische GitHub-Archivierung (`archived=true`) ist separat zu verifizieren.
+
+Prüfung: `npm run build`, `npm test`, `npm run validate`. Neue Tests prüfen den realen Worker mit simulierten APIs und den ausgelieferten UI-Code in einem DOM-Testmodell: bearbeitete Idee, Neuladen/Fortsetzen, Modell-/Qualitätswechsel, Ausfallbehandlung, Kosten/Diagnose, unveränderte Direktprompts und Sicherung/Wiederherstellung einschließlich binärem MIDI. Keine kostenpflichtigen Testkompositionen; kein musikalischer Hörtest und kein echter Browser-Screenshot-Test. Ein praktischer Nutzertest entscheidet über SAFE.
 
 ### v0.1.35 – Senden an Hacklily
 

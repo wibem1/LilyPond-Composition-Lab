@@ -17,3 +17,5 @@ textarea{display:block}
 #task{min-height:8rem}
 #system{min-height:11rem}
 #code{min-height:24rem}
+
+[hidden]{display:none!important}#draft{min-height:10rem}#conceptPanel{margin-top:16px;border-top:1px solid #364054;padding-top:8px}

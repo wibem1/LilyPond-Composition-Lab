@@ -1,0 +1,16 @@
+// A sound concept describes musical intentions, never a partially notated score.
+export const IDEA_SYSTEM='Entwickle zum Auftrag eine Klangvorstellung für ein noch zu komponierendes Musikstück. Beschreibe knapp und konkret Charakter, musikalische Gestik, Form, Spannungsbogen, Kontraste, Phrasierung, Dichte und Registerentwicklung. Beachte Besetzung, Länge und Wünsche des Auftrags. Noch keine Notation, ausnotierten Töne, MIDI-Daten oder technische Übertragung. Liefere nur die bearbeitbare musikalische Idee auf Deutsch.';
+export const workflowChoice=v=>v==='concept'?'concept':'direct';
+export const qualityChoice=v=>['short','balanced'].includes(v)?v:'default';
+export const reasoningFor=v=>v==='short'?{effort:'low'}:v==='balanced'?{effort:'medium'}:null;
+export function ideaMessages(task,system){return [{role:'system',content:IDEA_SYSTEM},{role:'user',content:task+(system?'\n\nZusätzliche Vorgaben für die spätere Komposition (jetzt ausschließlich eine Klangvorstellung entwickeln):\n'+system:'')}];}
+export function compositionMessages(task,system,draft=''){
+ if(!draft)return [{role:'system',content:system},{role:'user',content:task}];
+ return [{role:'system',content:system.replace('Es gibt keinen vorgeschalteten Entwurf.','Die Klangvorstellung liegt bereits vor. Arbeite sie jetzt musikalisch aus.')},{role:'user',content:task+'\n\nBearbeitete Klangvorstellung:\n'+draft+'\n\nKomponiere daraus jetzt das vollständige LilyPond-Dokument. Der Auftrag bestimmt Besetzung und Umfang; die Klangvorstellung beschreibt die musikalische Gestaltung. Antworte ausschließlich mit LilyPond-Code.'}];
+}
+export function stageRecord(value){
+ if(!value||typeof value!=='object'||Array.isArray(value))return null;
+ const text=v=>String(v??'').slice(0,250000),number=v=>Number.isFinite(Number(v))?Math.max(0,Number(v)):0;
+ return {runId:text(value.runId).replace(/[^a-f0-9]/g,'').slice(0,40),model:text(value.model).slice(0,200),actualModel:text(value.actualModel).slice(0,200),quality:qualityChoice(value.quality),task:text(value.task),system:text(value.system),answer:text(value.answer),finishReason:text(value.finishReason).slice(0,40),cost:number(value.cost),durationMs:number(value.durationMs),usage:value.usage&&typeof value.usage==='object'?{prompt_tokens:number(value.usage.prompt_tokens),completion_tokens:number(value.usage.completion_tokens),total_tokens:number(value.usage.total_tokens),cost:number(value.usage.cost)}:null};
+}
+export function workflowFields(v){return {workflow:workflowChoice(v?.workflow),ideaStage:stageRecord(v?.ideaStage),compositionStage:stageRecord(v?.compositionStage)};}

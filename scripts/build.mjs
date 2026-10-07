@@ -6,6 +6,7 @@ for(const [url,file,type] of [['/app.mjs','app/app.mjs','text/javascript'],['/st
 assets['/run-client.mjs']={text:await readFile('src/run-client.mjs','utf8'),type:'text/javascript; charset=utf-8'};
 assets['/composition-costs.mjs']={text:await readFile('src/composition-costs.mjs','utf8'),type:'text/javascript; charset=utf-8'};
 assets['/soundfont-cache.mjs']={text:await readFile('src/soundfont-cache.mjs','utf8'),type:'text/javascript; charset=utf-8'};
+assets['/composition-workflow.mjs']={text:await readFile('src/composition-workflow.mjs','utf8'),type:'text/javascript; charset=utf-8'};
 const PAGE=await readFile('app/index.html','utf8');
 await writeFile('worker/generated.js','export const PAGE='+JSON.stringify(PAGE)+';\nexport const ASSETS='+JSON.stringify(assets)+';\n');
 await mkdir('dist/server',{recursive:true});await mkdir('dist/.openai',{recursive:true});

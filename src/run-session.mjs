@@ -3,7 +3,7 @@
 const active=new Map();
 export function noteRunProgress(runId,event,data){
  const session=active.get(runId);if(!session)return;
- const phase=event==='anfrage'?(data.operation==='octave-repair'?'Oktavlagen werden korrigiert':data.operation==='title'?'Titel wird vergeben':'KI komponiert'):event==='antwort'?'KI-Antwort gespeichert':event==='kompilierung'||event==='korrekturpruefung'?'Noten und MIDI werden geprüft':null;
+ const phase=event==='anfrage'?(data.operation==='octave-repair'?'Oktavlagen werden korrigiert':data.operation==='title'?'Titel wird vergeben':data.operation==='concept'?'Klangvorstellung wird entwickelt':'KI komponiert'):event==='antwort'?'KI-Antwort gespeichert':event==='kompilierung'||event==='korrekturpruefung'?'Noten und MIDI werden geprüft':null;
  if(phase){session.state.phase=phase;session.send({type:'progress',phase});}
 }
 export async function readRunSession(runId,io){

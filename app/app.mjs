@@ -1,3 +1,4 @@
+import {workflowChoice} from '/composition-workflow.mjs';
 import {compositionCosts,costLabel} from '/composition-costs.mjs';
 import {SoundFontPlayer} from '/soundfont-player.mjs';
 import {RunClient} from '/run-client.mjs';
@@ -8,12 +9,12 @@ const TECHNICAL_SYSTEM='Komponiere nach dem Auftrag direkt ein vollständiges Li
 const SYSTEM=ORIGINAL_SYSTEM+' Notiere die musikalisch sinnvollen Ausdruckszeichen direkt in der Partitur: Dynamik und ihre Verläufe, Artikulation und Phrasierungsbögen, zum Instrument passende Pedalangaben sowie Tempoveränderungen. Verwende Verzierungen, wenn sie musikalisch passen.';
 $('system').value=SYSTEM;
 const player=new SoundFontPlayer();let catalog=[],busy=false,ready=false,loading=false,timer,saveChain=Promise.resolve(),restoring=true,modelChoice='',selectedFont=null,fontRevision=0,fontRestore=null;
-let state={historyId:'',runId:'',costs:{composition:0,realisation:0},downloads:[],midiUrl:'',pages:[],compiler:''};
+let state={workflow:'direct',ideaStage:null,compositionStage:null,historyId:'',runId:'',costs:{composition:0,realisation:0},downloads:[],midiUrl:'',pages:[],compiler:''};
 async function api(path,data,method){try{const r=await fetch(path,{method:method||(data?'POST':'GET'),headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});const d=await r.json();if(!r.ok){const e=Error(d.error||'HTTP '+r.status);e.details=d;throw e;}return d;}catch(e){runClient.record(runClient.pendingRunId||state.runId,e instanceof TypeError||e.name==='AbortError'?'network_error':'api_error',path+': '+e.message);throw e;}}
-function payload(){return {...state,id:state.historyId,title:$('title').value,task:$('task').value,system:$('system').value,techout:$('code').value,draft:'',format:'lilypond',tokens1:$('tokens').value,compositionReasoning:$('compositionReasoning').value,compositionModel:$('model').value||modelChoice,realisationModel:'',compiler:$('compiler').textContent};}
+function payload(){return {...state,id:state.historyId,title:$('title').value,task:$('task').value,system:$('system').value,techout:$('code').value,draft:$('draft').value,workflow:$('workflow').value,format:'lilypond',tokens1:$('tokens').value,compositionReasoning:$('compositionReasoning').value,compositionModel:$('model').value||modelChoice,realisationModel:'',compiler:$('compiler').textContent};}
 function queueSave(){if(restoring)return;clearTimeout(timer);timer=setTimeout(()=>persist(),550);}
-function persist(){if(restoring||runClient.pendingRunId)return Promise.resolve();const workspace=payload();saveChain=saveChain.catch(()=>{}).then(()=>api('/api/workspace',{workspace})).then(()=>{$('memoryStatus').textContent='Letzter Arbeitsstand gespeichert.'}).catch(e=>{$('memoryStatus').textContent='Arbeitsstand konnte nicht gespeichert werden: '+e.message;throw e});return saveChain;}
-function setBusy(v){busy=v;for(const id of ['compose','compile','new','import','openHistory','deleteHistory','saveHistory'])$(id).disabled=v;}
+function persist(){if(restoring||runClient.pendingRunId)return Promise.resolve();const workspace=payload();saveChain=saveChain.catch(()=>{}).then(()=>api('/api/workspace',{workspace})).then(async()=>{if(workspace.workflow==='concept'&&workspace.draft&&workspace.historyId)await api('/api/history',workspace);$('memoryStatus').textContent='Letzter Arbeitsstand gespeichert.'}).catch(e=>{$('memoryStatus').textContent='Arbeitsstand konnte nicht gespeichert werden: '+e.message;throw e});return saveChain;}
+function setBusy(v){busy=v;for(const id of ['compose','continueComposition','compile','new','import','openHistory','deleteHistory','saveHistory','backupHistory','restoreHistory','workflow','provider','model','compositionReasoning','task','system','tokens','draft'])$(id).disabled=v;renderWorkflow();}
 function message(s){$('status').textContent=s;}
 const runClient=new RunClient({onprogress:message});
 const fontCache=new SoundFontCache({onwarning:e=>runClient.record(state.runId,'soundfont_cache_error',e.message)});
@@ -42,32 +43,65 @@ async function saveSoundFont(buffer,name){
 }
 
 function invalidate(){player.stop();ready=false;state.midiUrl='';state.pages=[];state.downloads=[];renderResults();$('scoreStatus').textContent='Code geändert. Bitte neu kompilieren.';queueSave();}
+const qualityLabel=v=>({short:'Kurz',balanced:'Ausgewogen',default:'Modellvorgabe'}[v]||'Modellvorgabe');
+function renderWorkflow(){
+ const concept=$('workflow').value==='concept';
+ $('compose').textContent=concept?'Klangvorstellung entwickeln':'Komponieren';
+ $('conceptPanel').hidden=!concept||!$('draft').value.trim();
+ $('continueComposition').hidden=!!state.compositionStage;
+ $('continueComposition').disabled=busy||!$('draft').value.trim()||!state.ideaStage||!!state.compositionStage;
+ const describe=(name,stage)=>name+': '+(stage.actualModel||stage.model)+' · '+qualityLabel(stage.quality)+' · $'+Number(stage.cost||0).toFixed(6)+' · '+(Number(stage.durationMs||0)/1000).toFixed(1)+' Sekunden';
+ $('ideaInfo').textContent=state.ideaStage?describe('Klangvorstellung',state.ideaStage):'';
+ const stages=[state.ideaStage&&describe('Klangvorstellung',state.ideaStage),state.compositionStage&&describe('Komposition',state.compositionStage)].filter(Boolean);
+ $('stageDetails').hidden=!stages.length;$('stageInfo').textContent=stages.join('\n');
+}
 function renderResults(){
+ renderWorkflow();
  $('score').replaceChildren();for(const p of state.pages||[]){const img=document.createElement('img');img.src=p.url;img.alt=p.label;img.loading='lazy';$('score').append(img)}
  $('scoreStatus').textContent=state.pages?.length?state.pages.length+' Notenseite(n).':'Noch kein aktuelles Notenbild.';
  $('downloads').replaceChildren();for(const d of state.downloads||[]){const a=document.createElement('a');a.href=d.url;a.textContent=d.label+' speichern';$('downloads').append(a)}
  for(const id of ['play','pause','stop','saveMidi','position'])$(id).disabled=!state.midiUrl||(id==='play'&&loading);
  $('diagnosis').disabled=!state.runId;$('compiler').textContent=state.compiler||'Noch nicht kompiliert.';
  $('playerTitle').textContent=state.midiUrl?$('title').value:'Noch keine aktuelle MIDI-Datei geladen.';
- $('costs').textContent='Erfasste KI-Kosten dieser Komposition: '+costLabel(state.costs)+(state.costs?' · davon frühere Oktavkorrektur $'+Number(state.costs.realisation||0).toFixed(6):'');
+ $('costs').textContent='Erfasste KI-Kosten dieser Komposition: '+costLabel(state.costs)+(state.ideaStage?' · Klangvorstellung $'+Number(state.ideaStage.cost||0).toFixed(6):'');
 }
-function apply(e){if(Number(e.tokens1)===8000)e={...e,tokens1:64000};if(e.system===TECHNICAL_SYSTEM||e.system===ORIGINAL_SYSTEM)e={...e,system:SYSTEM};player.stop();ready=false;state={...state,...e,costs:compositionCosts(e.costs),historyId:e.historyId||e.id||'',midiUrl:e.midiUrl||'',pages:e.pages||[],downloads:e.downloads||[]};for(const [id,key] of [['task','task'],['title','title'],['code','techout'],['system','system'],['tokens','tokens1'],['compositionReasoning','compositionReasoning']])if(e[key]!==undefined)$(id).value=e[key];modelChoice=e.compositionModel||modelChoice;selectModel(modelChoice);renderResults();}
+function apply(e){if(Number(e.tokens1)===8000)e={...e,tokens1:64000};if(e.system===TECHNICAL_SYSTEM||e.system===ORIGINAL_SYSTEM)e={...e,system:SYSTEM};player.stop();ready=false;state={...state,...e,...{workflow:workflowChoice(e.workflow),ideaStage:e.ideaStage||null,compositionStage:e.compositionStage||null},costs:compositionCosts(e.costs),historyId:e.historyId||e.id||'',midiUrl:e.midiUrl||'',pages:e.pages||[],downloads:e.downloads||[]};$('draft').value=e.draft||'';$('workflow').value=workflowChoice(e.workflow);for(const [id,key] of [['task','task'],['title','title'],['code','techout'],['system','system'],['tokens','tokens1'],['compositionReasoning','compositionReasoning']])if(e[key]!==undefined)$(id).value=e[key];modelChoice=e.compositionModel||modelChoice;selectModel(modelChoice);renderResults();}
 function selectModel(id){const m=catalog.find(x=>x.id===id);if(!m)return;$('provider').value=m.provider;populateModels(id);}
 function populateModels(preferred=''){const list=catalog.filter(x=>x.provider===$('provider').value);$('model').replaceChildren(...list.map(m=>new Option(m.name||m.id,m.id)));if(list.some(m=>m.id===preferred))$('model').value=preferred;modelChoice=$('model').value;prices();}
 function prices(){const m=catalog.find(x=>x.id===$('model').value);$('price').textContent=m?`Je 1 Mio. Tokens: Eingabe $${(m.prompt*1e6).toFixed(2)} · Ausgabe $${(m.completion*1e6).toFixed(2)}. Tatsächliche Kosten stehen in der Diagnose.`:'';}
 async function models(){try{const d=await api('/api/models');catalog=d.models;const providers=[...new Set(catalog.map(m=>m.provider))].sort();$('provider').replaceChildren(...providers.map(x=>new Option(x,x)));selectModel(modelChoice||catalog.find(x=>x.id.startsWith('anthropic/claude-sonnet-'))?.id||catalog[0]?.id);if(!$('model').value)populateModels();$('catalogStatus').textContent=catalog.length+' Textmodelle verfügbar.'}catch(e){$('catalogStatus').textContent='Modellkatalog: '+e.message;}}
-async function refreshHistory(){const d=await api('/api/history');$('history').replaceChildren(...d.entries.map(e=>new Option(e.title+(e.compositionReasoning?' · '+({short:'Kurz',balanced:'Ausgewogen',default:'Modellvorgabe'}[e.compositionReasoning]||e.compositionReasoning):'')+' · '+new Date(e.updatedAt).toLocaleString('de-DE')+' · '+costLabel(e.costs),e.id)));if(state.historyId)$('history').value=state.historyId;}
-async function saveHistory(){if(!$('code').value.trim())return;const d=await api('/api/history',payload());state.historyId=d.entry.id;await refreshHistory();await persist();}
+async function refreshHistory(){const d=await api('/api/history');$('history').replaceChildren(...d.entries.map(e=>new Option(e.title+(e.workflow==='concept'?(e.hasRealisation?' · Mit Klangvorstellung':' · Klangvorstellung – fortsetzbar'):'')+(e.compositionReasoning?' · '+({short:'Kurz',balanced:'Ausgewogen',default:'Modellvorgabe'}[e.compositionReasoning]||e.compositionReasoning):'')+' · '+new Date(e.updatedAt).toLocaleString('de-DE')+' · '+costLabel(e.costs),e.id)));if(state.historyId)$('history').value=state.historyId;}
+async function saveHistory(){if(!$('code').value.trim()&&!$('draft').value.trim())return;const d=await api('/api/history',payload());state.historyId=d.entry.id;await refreshHistory();await persist();}
 async function compiledResult(d){ready=false;player.stop();state.midiUrl=d.url||'';state.pages=d.pages||[];state.compiler=[d.error,d.warning,d.repair,d.expressionPlayback?.mode==='articulate'?'Erweiterte Ausdruckswiedergabe aktiv (Bögen, Artikulation, erkannte Tempoangaben).':'',d.rangeCheck?.status==='passed'?'Tonumfangprüfung bestanden (klingende MIDI-Töne).':'',d.logs].filter(Boolean).join('\n')||'Kompilierung erfolgreich.';state.downloads=state.downloads.filter(x=>x.url.endsWith('.ly'));if(d.url)state.downloads.push({label:'MIDI-Datei',url:d.url});renderResults();}
-$('compose').onclick=async()=>{
+function requestInputs(){return {key:$('key').value,model:$('model').value,task:$('task').value,system:$('system').value,maxTokens:Number($('tokens').value),compositionReasoning:$('compositionReasoning').value,title:$('title').value};}
+async function acceptRunResult(d){
+ if(d.operation==='concept'){
+  apply({...d,id:d.historyId,techout:''});await persist();await refreshHistory();
+  message(d.warning||'Klangvorstellung gespeichert. Bearbeite die Idee und wähle anschließend „Weiter komponieren“.');return;
+ }
+ apply({...d,techout:d.answer,id:d.historyId});
+ await compiledResult(d.compiled);await persist();await refreshHistory();
+}
+async function generateIdea(){
+ if(busy)return;if(!$('model').value)return message('Bitte zuerst ein Modell auswählen.');if(!$('task').value.trim())return message('Bitte einen Auftrag eingeben.');
+ await persist();setBusy(true);player.stop();ready=false;
+ state={workflow:'concept',ideaStage:null,compositionStage:null,historyId:'',runId:crypto.randomUUID().replaceAll('-',''),costs:{composition:0,realisation:0},downloads:[],midiUrl:'',pages:[],compiler:''};
+ $('draft').value='';$('code').value='';renderResults();message('Klangvorstellung wird entwickelt …');
+ try{await acceptRunResult(await runClient.start({...requestInputs(),runId:state.runId,operation:'concept'}));}
+ catch(e){message('Fehler: '+e.message);if(!runClient.pendingRunId)queueSave();}
+ finally{setBusy(false);renderResults();}
+}
+$('continueComposition').onclick=()=>compose(true).catch(e=>message('Speichern: '+e.message));
+$('compose').onclick=()=>($('workflow').value==='concept'?generateIdea():compose(false)).catch(e=>message('Speichern: '+e.message));
+async function compose(continuing=false){
  if(busy)return;if(!$('model').value)return message('Bitte zuerst ein Modell auswählen.');
  const task=$('task').value;if(!task.trim())return message('Bitte einen Auftrag eingeben.');
- setBusy(true);state.runId=crypto.randomUUID().replaceAll('-','');state.historyId='';state.costs={composition:0,realisation:0};renderResults();message('Compiler wird vor dem KI-Aufruf geprüft …');
+ if(continuing&&(!state.ideaStage||!state.historyId||state.compositionStage))return message('Bitte eine gespeicherte Klangvorstellung öffnen.');
+ await persist();setBusy(true);state.runId=crypto.randomUUID().replaceAll('-','');if(!continuing){state.workflow='direct';state.ideaStage=null;state.compositionStage=null;state.historyId='';state.costs={composition:0,realisation:0};$('draft').value='';}renderResults();message('Compiler wird vor dem KI-Aufruf geprüft …');
  try{
   await persist();
-  const d=await runClient.start({runId:state.runId,key:$('key').value,model:$('model').value,task,system:$('system').value,maxTokens:Number($('tokens').value),compositionReasoning:$('compositionReasoning').value,title:$('title').value});
-  state.runId=d.runId||state.runId;$('code').value=d.answer;$('title').value=d.title;state.historyId=d.historyId;state.downloads=d.downloads;state.costs=d.costs||{composition:Number(d.usage?.cost)||0,realisation:0};
-  await compiledResult(d.compiled);await persist();await refreshHistory();
+  const d=await runClient.start({...requestInputs(),runId:state.runId,workflow:continuing?'concept':'direct',historyId:state.historyId,draft:continuing?$('draft').value:''});
+  await acceptRunResult(d);
   message(d.compiled.incomplete?d.compiled.error:d.compiled.repairFailed?'Oktavkorrektur fehlgeschlagen. Das Stück ist weiterhin fehlerhaft.':d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
   if(d.finish_reason==='length'&&!d.compiled.incomplete)message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
   if(d.compiled.repair)message($('status').textContent+'\n'+d.compiled.repair);
@@ -79,17 +113,29 @@ $('compose').onclick=async()=>{
 $('compile').onclick=async()=>{if(busy)return;const code=$('code').value;if(!code.trim())return message('Bitte LilyPond-Code eingeben oder öffnen.');setBusy(true);state.runId||=crypto.randomUUID().replaceAll('-','');message('LilyPond wird kompiliert …');try{const d=await api('/api/compile-lilypond',{code,title:$('title').value,task:$('task').value,runId:state.runId});if(d.code&&d.code!==$('code').value){$('code').value=d.code;state.downloads=[];}await compiledResult(d);await saveHistory();message('Kompiliert · '+d.pages.length+' Seite(n).'+(d.repair?'\n'+d.repair:d.warning?'\n'+d.warning:d.rangeCheck?.status==='passed'?'\nTonumfangprüfung bestanden.':''))}catch(e){state.compiler=[e.message,e.details?.logs].filter(Boolean).join('\n');invalidate();$('compiler').textContent=state.compiler;message('Compilerfehler: '+e.message);await saveHistory().catch(x=>{$('memoryStatus').textContent=x.message})}finally{setBusy(false);renderResults()}};
 $('sendHacklily').onclick=()=>{const code=$('code').value;if(!code.trim())return message('Bitte LilyPond-Code eingeben oder öffnen.');const a=document.createElement('a');a.href='https://www.hacklily.org/?src='+encodeURIComponent(code);a.target='_blank';a.rel='noopener noreferrer';a.click();};
 $('saveLy').onclick=()=>{const url=URL.createObjectURL(new Blob([$('code').value],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=($('title').value.replace(/[\\/:*?"<>|]/g,'_')||'Komposition')+'.ly';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};
-$('import').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>200000)return message('Datei zu groß (max. 200 KB).');state.historyId='';state.runId='';state.costs={composition:0,realisation:0};$('code').value=await f.text();$('title').value=$('code').value.match(/\btitle\s*=\s*"([^"\n]+)"/)?.[1]||f.name.replace(/\.ly$/i,'');invalidate();await saveHistory().catch(x=>message(x.message));e.target.value='';};
-$('new').onclick=()=>{player.stop();ready=false;state={historyId:'',runId:'',costs:{composition:0,realisation:0},downloads:[],midiUrl:'',pages:[],compiler:''};$('code').value='';$('title').value='Unbenannte Komposition';renderResults();queueSave();message('Neue Komposition bereit.');};
+$('import').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>200000)return message('Datei zu groß (max. 200 KB).');state.historyId='';state.runId='';state.workflow='direct';state.ideaStage=null;state.compositionStage=null;$('draft').value='';$('workflow').value='direct';state.costs={composition:0,realisation:0};$('code').value=await f.text();$('title').value=$('code').value.match(/\btitle\s*=\s*"([^"\n]+)"/)?.[1]||f.name.replace(/\.ly$/i,'');invalidate();await saveHistory().catch(x=>message(x.message));e.target.value='';};
+$('new').onclick=()=>{player.stop();ready=false;state={workflow:$('workflow').value,ideaStage:null,compositionStage:null,historyId:'',runId:'',costs:{composition:0,realisation:0},downloads:[],midiUrl:'',pages:[],compiler:''};$('code').value='';$('draft').value='';$('title').value='Unbenannte Komposition';renderResults();queueSave();message('Neue Komposition bereit.');};
 $('saveHistory').onclick=()=>saveHistory().catch(e=>{$('memoryStatus').textContent=e.message});
 $('openHistory').onclick=async()=>{try{if(!$('history').value)return;apply((await api('/api/history/'+$('history').value)).entry);await persist()}catch(e){$('memoryStatus').textContent=e.message}};
 $('deleteHistory').onclick=async()=>{const id=$('history').value;if(!id)return;if(!confirm('Die ausgewählte Komposition aus dem Verlauf löschen?'))return;try{await api('/api/history/'+id,null,'DELETE');if(state.historyId===id)state.historyId='';await refreshHistory();await persist()}catch(e){$('memoryStatus').textContent=e.message}};
+$('backupHistory').onclick=async()=>{
+ if(busy)return;setBusy(true);message('Verlaufssicherung wird erstellt …');
+ try{await persist();const r=await fetch('/api/history-backup');if(!r.ok)throw Error((await r.json()).error);const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='LilyPond-Verlauf-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);message('Verlaufssicherung erstellt.');}
+ catch(e){message('Sicherung: '+e.message);}finally{setBusy(false);}
+};
+$('restoreHistory').onchange=async e=>{
+ const f=e.target.files[0];if(!f||busy)return;setBusy(true);message('Verlaufssicherung wird eingelesen …');
+ try{if(f.size>24*1024*1024)throw Error('Sicherungsdatei zu groß (24 MB).');const r=await fetch('/api/history-backup',{method:'POST',headers:{'Content-Type':'application/json'},body:await f.text()}),d=await r.json();if(!r.ok)throw Error(d.error);await refreshHistory();if(d.workspaceRestored){const saved=await api('/api/workspace');if(saved.workspace)apply(saved.workspace);}message(d.imported+' Einträge wiederhergestellt · '+d.skipped+' bereits vorhandene Einträge beibehalten.');}
+ catch(x){message('Wiederherstellung: '+x.message);}finally{e.target.value='';setBusy(false);}
+};
 $('diagnosis').onclick=async()=>{await runClient.flush();if(state.runId)location.href='/api/diagnosis?runId='+encodeURIComponent(state.runId);};
 async function keyStatus(){const d=await api('/api/key-status');$('keyStatus').textContent=d.stored?'Schlüssel für diese App verschlüsselt gespeichert. Mit „Verbindung prüfen“ testen.':'Noch kein Schlüssel gespeichert.';$('saveKey').disabled=!d.canStore;}
 $('saveKey').onclick=async()=>{try{await api('/api/key-store',{key:$('key').value});$('key').value='';await keyStatus()}catch(e){$('keyStatus').textContent=e.message}};
 $('checkKey').onclick=async()=>{try{await api('/api/key-check',{key:$('key').value});$('keyStatus').textContent='OpenRouter-Verbindung geprüft. Der Schlüssel wird akzeptiert. Keine Komposition gestartet.'}catch(e){$('keyStatus').textContent=e.message}};
 $('deleteKey').onclick=async()=>{try{await api('/api/key-store',null,'DELETE');$('key').value='';await keyStatus()}catch(e){$('keyStatus').textContent=e.message}};
 $('reloadModels').onclick=models;$('provider').onchange=()=>{populateModels();queueSave()};$('model').onchange=()=>{modelChoice=$('model').value;prices();queueSave()};
+$('workflow').onchange=()=>{state.workflow=$('workflow').value;renderWorkflow();queueSave();};
+$('draft').oninput=()=>{renderWorkflow();queueSave();};
 for(const id of ['task','title','system','tokens','compositionReasoning'])$(id).oninput=queueSave;$('code').oninput=invalidate;
 const fmt=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
 player.onprogress=(t,d)=>{$('position').max=d||1;$('position').value=t;$('time').textContent=fmt(t)+' / '+fmt(d)};
@@ -104,7 +150,7 @@ window.addEventListener('pagehide',()=>{if(!restoring&&!runClient.pendingRunId)n
 async function boot(){fontRestore=restoreSoundFont();renderResults();try{const d=await api('/api/workspace');if(d.workspace)apply(d.workspace)}catch(e){$('memoryStatus').textContent='Letzter Arbeitsstand: '+e.message}restoring=false;await Promise.allSettled([models(),refreshHistory(),keyStatus()]);if(runClient.pendingRunId)await recoverPending();}
 async function recoverPending(){
  if(busy||!runClient.pendingRunId)return;setBusy(true);state.runId=runClient.pendingRunId;runClient.record(state.runId,'page_restored');message('Vorheriger Auftrag wird wiederhergestellt …');
- try{const d=await runClient.recover();$('code').value=d.answer;$('title').value=d.title;state.historyId=d.historyId;state.downloads=d.downloads;state.costs=d.costs;await compiledResult(d.compiled);await persist();await refreshHistory();message('Ergebnis wiederhergestellt.'+(d.compiled.warning?'\n'+d.compiled.warning:''));}catch(e){message(e.message);}finally{setBusy(false);renderResults();}
+ try{await acceptRunResult(await runClient.recover());message('Ergebnis wiederhergestellt.');}catch(e){message(e.message);}finally{setBusy(false);renderResults();}
 }
 window.addEventListener('offline',()=>runClient.record(runClient.pendingRunId||state.runId,'offline','Browser meldet keine Internetverbindung.'));
 window.addEventListener('online',()=>{runClient.record(runClient.pendingRunId||state.runId,'online');runClient.flush();if(!busy)recoverPending();});
