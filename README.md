@@ -149,6 +149,6 @@ Die Diagnose e7bdcb78 zeigte 27.323 Denktokens trotz angefordertem 2.048-Token-D
 
 Grundlagen: https://platform.claude.com/docs/en/build-with-claude/effort und https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
 
-### v0.1.31 – ausgewogener Denkaufwand
+### v0.1.31 – drei Qualitätsstufen für alle Modelle
 
-Dritte Auswahl „Ausgewogen“ sendet `reasoning.effort=medium`. „Kurz“ und „Modellvorgabe“ behalten ihre Steuerung aus v0.1.30, die voreingestellte Auswahl bleibt „Kurz“. Die mittlere Einstellung wird beim Komponieren, manuellen Speichern, Verlauf-Laden und Wiederherstellen des Arbeitsstands erhalten. Auftrag und Systemprompt sowie das gesamte Tokenbudget bleiben unverändert. Tests prüfen alle drei Sonnet-Einstellungen, den tatsächlichen Anfrageparameter in der Diagnose und das Speichern beider Speicherwege. Mittlere Denkstufe ist keine feste Zeit- oder Kostenzusage; musikalische Qualität und Einsparung sind am echten Ergebnis zu vergleichen.
+Die Auswahl gilt anbieterübergreifend: „Kurz“ sendet `reasoning.effort=low`, „Ausgewogen“ sendet `reasoning.effort=medium`, „Modellvorgabe“ sendet keine Denksteuerung. OpenRouter übersetzt die einheitliche Steuerung in die vom Modell unterstützten Parameter; Modelle ohne entsprechende Unterstützung können die Anforderung ignorieren. Der bisherige Sonderfall für Sonnet und die starre 2.048-Token-Anforderung entfallen. Voreingestellt bleibt „Kurz“. Verlauf und Arbeitsstand speichern die Auswahl, die Verlaufsliste zeigt sie an und Laden stellt sie wieder her. Auftrag, Systemprompt und Gesamtbudget bleiben gleich. Simulierte Worker-Tests prüfen alle Stufen für mehrere Anbieter, Diagnose und beide Speicherwege. Zeit, Kosten und musikalische Qualität sind weiterhin am echten Ergebnis zu vergleichen.

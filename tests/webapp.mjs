@@ -126,9 +126,9 @@ localRepairSource=null;rendererMidi=null;
 // Short thinking is explicit, retained in memory/history and logged; default stays unrestricted.
 for(const k of [...env.BUCKET.items.keys()])if(k.startsWith('history/'))await env.BUCKET.delete(k);namingDown=false;
 const shortRun=await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',runId:'aa0011223344556688',compositionReasoning:'short'}});
-const shortRequest=requests.findLast(r=>r.messages[0].content==='MY EDITED SYSTEM');assert.deepEqual(shortRequest.reasoning,{max_tokens:2048});assert.equal(shortRequest.max_tokens,24000);
+const shortRequest=requests.findLast(r=>r.messages[0].content==='MY EDITED SYSTEM');assert.deepEqual(shortRequest.reasoning,{effort:'low'});assert.equal(shortRequest.max_tokens,24000);
 assert.equal((await value('/api/workspace')).workspace.compositionReasoning,'short');assert.equal((await value('/api/history/'+shortRun.historyId)).entry.compositionReasoning,'short');
-assert((await value('/api/diagnosis?runId=aa0011223344556688')).entries.some(e=>e.event==='anfrage'&&e.stage==='composition'&&e.reasoning_requested.max_tokens===2048));
+assert((await value('/api/diagnosis?runId=aa0011223344556688')).entries.some(e=>e.event==='anfrage'&&e.stage==='composition'&&e.reasoning_requested.effort==='low'));
 console.log('PASS: shipped local repair costs zero AI calls and passes MIDI range; explicit short thinking, unchanged note budget, saved selection and diagnostic trace.');
 
 // Actual SF2 bytes survive a fresh read; malformed replacement leaves the bank intact.
@@ -228,8 +228,23 @@ console.log('PASS: Sonnet 5.5 short uses low effort; default omits reasoning con
 
 // Manual edits/saves must retain the new choice, as must workspace restoration.
 const balancedSaved=(await value('/api/history',{method:'POST',data:{title:'Balanced save',techout:answer,format:'lilypond',compositionModel:'anthropic/claude-sonnet-5.5',compositionReasoning:'balanced'}})).entry;
+assert.equal(balancedSaved.compositionReasoning,'balanced');
 assert.equal((await value('/api/history/'+balancedSaved.id)).entry.compositionReasoning,'balanced');
+assert.equal((await value('/api/history')).entries.find(e=>e.id===balancedSaved.id).compositionReasoning,'balanced');
 await value('/api/workspace',{method:'POST',data:{workspace:{...ws,compositionReasoning:'balanced'}}});
 assert.equal((await value('/api/workspace')).workspace.compositionReasoning,'balanced');
 assert(html.includes('<option value="balanced">Ausgewogen'));
 console.log('PASS: balanced sends medium effort and survives composition history, manual history save/reload and workspace save/reload.');
+
+// Same control is used for every provider; no Claude-only branch remains.
+namingDown=true;let qualityIndex=0;
+for(const model of ['openai/test-model','google/test-model','other/test-model']){
+ for(const selection of ['short','balanced','default']){
+  const at=requests.length,runId='abcd2222'+String(++qualityIndex).padStart(8,'0');
+  const composed=await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',model,compositionReasoning:selection,runId}});
+  assert.deepEqual(requests[at].reasoning,selection==='default'?undefined:{effort:selection==='short'?'low':'medium'});
+  assert.equal((await value('/api/history/'+composed.historyId)).entry.compositionReasoning,selection);
+ }
+}
+namingDown=false;
+console.log('PASS: all three quality choices apply across provider IDs and survive history reload.');

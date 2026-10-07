@@ -64,7 +64,7 @@ function compositionFilename(v){
 const historyId=v=>/^[a-f0-9]{16,40}$/.test(String(v||''))?v:null;
 function historyPublic(v){
   return {id:v.id,title:v.title||'Unbenannte Komposition',createdAt:v.createdAt,updatedAt:v.updatedAt,hasMidi:!!v.midiUrl,
-    compositionModel:v.compositionModel||'',realisationModel:v.realisationModel||'',format:v.format||'',
+    compositionModel:v.compositionModel||'',compositionReasoning:v.compositionReasoning||'',realisationModel:v.realisationModel||'',format:v.format||'',
     hasDraft:!!v.draft,hasRealisation:!!v.techout,costs:compositionCosts(v.costs)};
 }
 async function upstream(url,init,timeout=185000){const ac=new AbortController();const t=setTimeout(()=>ac.abort(),timeout);try{return await fetch(url,{...init,signal:ac.signal});}finally{clearTimeout(t);}}
@@ -373,10 +373,7 @@ async function run(req,env){
   const max_tokens=Math.min(64000,Math.max(500,!requestedTokens||requestedTokens===8000?64000:requestedTokens));
   const messages=[{role:'system',content:system},{role:'user',content:task}];
   const compositionReasoning=['short','balanced'].includes(b.compositionReasoning)?b.compositionReasoning:'default';
-  // Sonnet 5.5 uses adaptive thinking: steer effort instead of a legacy token budget.
-  const adaptiveSonnet=/^anthropic\/claude-sonnet-5\.5(?:$|[-:])/.test(model);
-  if(compositionReasoning==='short'&&!adaptiveSonnet&&max_tokens<=1024)throw Error('Für kurzes Denken bitte ein Tokenbudget von mindestens 1025 wählen. Kein KI-Aufruf gestartet.');
-  const reasoning=compositionReasoning==='balanced'?{effort:'medium'}:compositionReasoning==='short'?(adaptiveSonnet?{effort:'low'}:{max_tokens:Math.min(2048,max_tokens-1)}):null;
+  const reasoning=compositionReasoning==='balanced'?{effort:'medium'}:compositionReasoning==='short'?{effort:'low'}:null;
   const payload={model,messages,max_tokens,stream:false,usage:{include:true},...(reasoning?{reasoning}:{})};
   await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:reasoning||'provider_default'});
   const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify(payload)});
