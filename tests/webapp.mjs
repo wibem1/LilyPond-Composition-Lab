@@ -12,6 +12,7 @@ const env={BUCKET:new MemoryBucket(),LAB_KEY_ENCRYPTION_KEY:btoa('01234567890123
 const tiny=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-response.json',import.meta.url),'utf8')).result;
 const driftMidi=(await readFile(new URL('./fixtures/luna-octave-drift.mid',import.meta.url))).toString('base64');let rendererMidi=null;
 let expressionError=false,localRepairSource=null,localRepairMidi=null,ottavaTest='same';
+let rendererLogs='';
 let paid=0,rendererDown=false,compileError=false,requests=[],rejectKey=false,redirectKey=false;
 let repairAnswer=null,repairMidi=null,repairFinish='stop',compositionFinish='stop',reportedModel=undefined;
 let namingAnswers=['Teststück · 2','Nächtlicher Dialog','Dämmerpfade'],namingDown=false;
@@ -20,7 +21,7 @@ const attributedAnswer='% KI-Modell: test/model\n'+answer.replace('title = "Test
 const withoutOttava=s=>s.replace(/\\ottava #-?\d+\s*/g,'').replace(/\s+/g,' ').trim();
 class Socket extends EventTarget{
  accept(){}
- send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:d.params.src.includes('\\ottava #')&&ottavaTest==='error'?{err:'ottava rendering failed'}:d.params.src.includes('\\ottava #')&&ottavaTest==='different'?{...tiny,midi:driftMidi}:localRepairSource&&d.params.src.includes(localRepairSource)?{...tiny,midi:localRepairMidi}:expressionError&&d.params.src.includes('labExpressionText')?{err:'expression failed',logs:'synthetic unsupported expression'}:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
+ send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:rendererLogs&&d.params.src.includes('header')?{...tiny,logs:rendererLogs}:d.params.src.includes('\\ottava #')&&ottavaTest==='error'?{err:'ottava rendering failed'}:d.params.src.includes('\\ottava #')&&ottavaTest==='different'?{...tiny,midi:driftMidi}:localRepairSource&&d.params.src.includes(localRepairSource)?{...tiny,midi:localRepairMidi}:expressionError&&d.params.src.includes('labExpressionText')?{err:'expression failed',logs:'synthetic unsupported expression'}:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
  close(){}
 }
 globalThis.fetch=async(url,opts={})=>{
@@ -33,7 +34,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.37'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('v0.1.38'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -285,3 +286,29 @@ const authorResult=await value('/api/compile-lilypond',{method:'POST',data:{code
 assert.equal(authorResult.code,undefined);assert.equal(authorResult.ottava.status,'unchanged');
 assert.equal(paid,notationPaid);
 console.log('PASS: recompile replaces a logged v0.1.33 line across ordinary register and preserves edited/handwritten octave lines, without AI calls.');
+
+// A renderer can return files despite fatal LilyPond diagnostics.
+rendererMidi=null;repairMidi=null;localRepairSource=null;expressionError=false;compileError=false;
+rendererLogs="synthetic.ly:17:36: warning: bar check failed at: 1/4";
+const warnPaid=paid;
+const warningResult=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,runId:'abcde00000000001'}});
+assert(warningResult.warning.includes('bar check failed'));assert.equal(warningResult.diagnostics.status,'warning');assert(warningResult.url);assert(warningResult.pages.length);assert.equal(paid,warnPaid);
+rendererLogs="synthetic.ly:12: error: unknown command: dolce\nsynthetic.ly:17: warning: bar check failed at: 1/4\nNote: compilation failed";
+const fatalResult=await call('/api/compile-lilypond',{method:'POST',data:{code:answer,runId:'abcde00000000002'}});
+assert.equal(fatalResult.status,422);const fatal=await fatalResult.json();assert.equal(fatal.diagnostics.status,'error');assert(fatal.logs.includes('dolce'));assert(!fatal.url);assert.equal(paid,warnPaid);
+rendererLogs='';
+const correctionOriginal=(await value('/api/history',{method:'POST',data:{title:'Teststück',techout:answer,task:'24 Takte',system:'Eigene Vorgabe',format:'lilypond',costs:{composition:.03,realisation:.01}}})).entry;
+const originalSnapshot=(await value('/api/history/'+correctionOriginal.id)).entry;
+const repairInput={operation:'repair',key:'sk-or-v1-TESTKEY',model:'test/model',compositionReasoning:'balanced',maxTokens:24000,historyId:correctionOriginal.id,code:answer,task:'24 Takte',system:'Eigene Vorgabe',diagnostics:'Takt 17: fünf Viertel. Stimmen sollen gemeinsam enden.',runId:'abcde00000000003'};
+const beforeCorrection=paid;
+const correctedResult=await value('/api/run',{method:'POST',data:repairInput});
+assert.equal(paid,beforeCorrection+1);assert.notEqual(correctedResult.historyId,correctionOriginal.id);assert(correctedResult.compiled.url);assert.equal(correctedResult.costs.composition,.03);assert.equal(correctedResult.costs.realisation,.0101);
+assert.deepEqual((await value('/api/history/'+correctionOriginal.id)).entry,originalSnapshot);
+const correctionRequest=requests.at(-1);assert.equal(correctionRequest.reasoning.effort,'medium');assert.equal(correctionRequest.max_tokens,24000);assert(correctionRequest.messages[0].content.includes('Keine Neukomposition'));assert(correctionRequest.messages[1].content.includes(answer));assert(correctionRequest.messages[1].content.includes(repairInput.diagnostics));
+const correctedHistory=(await value('/api/history/'+correctedResult.historyId)).entry;assert.equal(correctedHistory.correctionStages[0].quality,'balanced');assert.equal(correctedHistory.correctionStages[0].model,'test/model');assert.equal(correctedHistory.correctionStages[0].cost,.0001);
+assert.equal((await value('/api/workspace')).workspace.correctionStages[0].runId,repairInput.runId);
+const correctionDiagnosis=await value('/api/diagnosis?runId='+repairInput.runId);assert(correctionDiagnosis.entries.some(e=>e.operation==='repair'&&e.source===answer));assert.equal(correctionDiagnosis.costs.realisation,.0001);
+compositionFinish='length';const truncatedCorrection=await value('/api/run',{method:'POST',data:{...repairInput,runId:'abcde00000000004'}});assert(truncatedCorrection.compiled.incomplete);assert(!truncatedCorrection.compiled.url);assert.equal(truncatedCorrection.costs.realisation,.0101);assert.deepEqual((await value('/api/history/'+correctionOriginal.id)).entry,originalSnapshot);compositionFinish='stop';
+rendererLogs='synthetic.ly:17: warning: bar check failed at: 1/4';const stillWarning=await value('/api/run',{method:'POST',data:{...repairInput,runId:'abcde00000000005'}});assert(stillWarning.compiled.warning.includes('bar check failed'));rendererLogs='';
+rendererDown=true;const beforeOffline=paid;const offlineCorrection=await call('/api/run',{method:'POST',data:{...repairInput,runId:'abcde00000000006'}});assert.equal(offlineCorrection.status,412);assert.equal(paid,beforeOffline);rendererDown=false;
+console.log('PASS: compiler log errors override misleading files; bar warnings stay visible/playable without AI costs; targeted one-call correction preserves original, quality, costs and diagnostics, recompiles, handles truncation and stops before paid calls when renderer is offline.');

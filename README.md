@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.37
+# LilyPond Composition Lab v0.1.38
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -200,3 +200,9 @@ Prüfung: `npm run build`, `npm test`, `npm run validate`. Neue Tests prüfen de
 ### v0.1.35 – Senden an Hacklily
 
 Ein Button neben „Neu kompilieren“ öffnet den aktuellen Inhalt des LilyPond-Editors in einem neuen Hacklily-Tab über dessen src-Parameter. Auch ungespeicherte Änderungen werden übernommen; kein zusätzlicher KI-Aufruf und keine vorherige Neukompilierung. Leerer Code führt zu einem Hinweis. Der Quelltext wird URL-kodiert übertragen, der neue Tab hat keinen Zugriff auf die Ursprungsseite. Hacklily behandelt src als importierte, schreibgeschützte Vorlage. Grundlage ist die offizielle Implementierung in src/components/App.tsx und src/routes/index.tsx des Hacklily-Repositories.
+
+### v0.1.38 – Compilerhinweise und gezielte Korrektur · 07.10.2026
+
+Die editierbaren Standardanweisungen ergänzen Taktzahl, Gesamtdauer, Synchronisation, Schlüsselwahl, ausführbare Griffe und ausschließlich endgültige Definitionen. Unveränderte bisherige Standardvorgaben werden aktualisiert; eigene Vorgaben bleiben erhalten. Compilerfehler werden auch aus dem Protokoll erkannt, selbst wenn der Renderer Dateien liefert. Warnungen bleiben sichtbar und sperren die Wiedergabe nicht.
+
+„Fehler korrigieren“ sendet vorhandenen Code, ursprünglichen Auftrag, Compilerhinweise und optional eigene Hinweise an das gewählte Modell, mit gewähltem Denkaufwand. Ein Aufruf pro Klick, keine automatische kostenpflichtige Schleife. Die Antwort wird erneut kompiliert und als neuer Verlaufseintrag gespeichert; Original und Kompositionsstufen bleiben erhalten. Zusatzkosten, Korrekturmodell und Qualitätswahl werden im Verlauf und Diagnose mitgeführt. Eine fehlerfreie Kompilierung ersetzt keine musikalische Beurteilung.

@@ -6,7 +6,7 @@ const decode=value=>Uint8Array.from(atob(value),c=>c.charCodeAt(0));
 const validId=v=>/^[a-f0-9]{16,40}$/.test(String(v||''));
 const fileUrl=v=>typeof v==='string'&&/^\/download\/[^/]+$/.test(v);
 function refs(entry){return [...(entry.downloads||[]),...(entry.pages||[]),{url:entry.midiUrl}].map(x=>x?.url).filter(fileUrl);}
-function runIds(entry){return [entry.runId,entry.ideaStage?.runId,entry.compositionStage?.runId].filter(validId);}
+function runIds(entry){return [entry.runId,entry.ideaStage?.runId,entry.compositionStage?.runId,...(entry.correctionStages||[]).map(s=>s.runId)].filter(validId);}
 function checkFile(url,value){
  const name=decodeURIComponent(url.slice(10));if(/[\\/\x00-\x1f]/.test(name)||!['ly','mid','svg','txt'].includes(name.split('.').pop())||typeof value!=='string')throw Error('Ungültige Datei in der Sicherung.');
  return {name,ext:name.split('.').pop(),bytes:decode(value)};
@@ -33,7 +33,7 @@ export async function importHistory(data,io){
  const importing=[...selected,...(restoreWorkspace?[data.workspace]:[])];
  for(const url of new Set(importing.flatMap(refs))){const file=decoded.get(url);urlMap.set(url,await io.saveFile(file.name.replace(/\.[^.]+$/,''),file.ext,file.bytes));}
  for(const id of new Set(importing.flatMap(runIds)))runMap.set(id,crypto.randomUUID().replaceAll('-',''));
- const remap=entry=>{const copy=structuredClone(entry);copy.downloads=(copy.downloads||[]).map(d=>({...d,url:urlMap.get(d.url)||d.url}));copy.pages=(copy.pages||[]).map(d=>({...d,url:urlMap.get(d.url)||d.url}));copy.midiUrl=urlMap.get(copy.midiUrl)||copy.midiUrl;copy.runId=runMap.get(copy.runId)||'';for(const stage of ['ideaStage','compositionStage'])if(copy[stage])copy[stage].runId=runMap.get(copy[stage].runId)||'';return copy;};
+ const remap=entry=>{const copy=structuredClone(entry);copy.downloads=(copy.downloads||[]).map(d=>({...d,url:urlMap.get(d.url)||d.url}));copy.pages=(copy.pages||[]).map(d=>({...d,url:urlMap.get(d.url)||d.url}));copy.midiUrl=urlMap.get(copy.midiUrl)||copy.midiUrl;copy.runId=runMap.get(copy.runId)||'';for(const stage of ['ideaStage','compositionStage'])if(copy[stage])copy[stage].runId=runMap.get(copy[stage].runId)||'';for(const stage of copy.correctionStages||[])stage.runId=runMap.get(stage.runId)||'';return copy;};
  for(const entry of selected)await io.saveEntry(remap(entry));
  for(const log of data.diagnostics)if(runMap.has(log.runId))await io.saveLogs(runMap.get(log.runId),log.entries);
  if(restoreWorkspace)await io.saveWorkspace(remap(data.workspace));
