@@ -147,7 +147,7 @@ export function repairAbsoluteSpelling(source){
 
 const accidental=t=>(t.match(/is/g)||[]).length-(t.match(/es/g)||[]).length-(t.startsWith('as')?1:0);
 const midiKey=(t,octave)=>12*(octave+1)+[0,2,4,5,7,9,11][degree(t)]+accidental(t);
-const gmNames=new Map([[0,'acoustic grand'],[1,'bright acoustic'],[2,'electric grand'],[3,'honky-tonk'],[4,'electric piano 1'],[5,'electric piano 2'],[40,'violin'],[41,'viola'],[42,'cello'],[43,'contrabass'],[46,'orchestral harp'],[47,'timpani'],[56,'trumpet'],[57,'trombone'],[58,'tuba'],[59,'muted trumpet'],[60,'french horn'],[68,'oboe'],[69,'english horn'],[70,'bassoon'],[71,'clarinet'],[72,'piccolo'],[73,'flute']]);
+const gmNames=new Map([[0,'acoustic grand'],[1,'bright acoustic'],[2,'electric grand'],[3,'honky-tonk'],[4,'electric piano 1'],[5,'electric piano 2'],[40,'violin'],[41,'viola'],[42,'cello'],[43,'contrabass'],[44,'tremolo strings'],[45,'pizzicato strings'],[48,'string ensemble 1'],[49,'string ensemble 2'],[46,'orchestral harp'],[47,'timpani'],[56,'trumpet'],[57,'trombone'],[58,'tuba'],[59,'muted trumpet'],[60,'french horn'],[61,'brass section'],[68,'oboe'],[69,'english horn'],[70,'bassoon'],[71,'clarinet'],[72,'piccolo'],[73,'flute']]);
 export function automaticOctaveRepair(source,instruments,registerIssues=[]){
  if(!instruments?.length||instruments.some(x=>x.status!=='checked'||x.low===null||x.high===null))return {error:'Kein verlässlicher Instrumententonumfang für die automatische Korrektur.'};
  const spelling=instruments.every(x=>x.program<=5)?repairAbsoluteSpelling(source):null;if(spelling)return spelling;
@@ -187,7 +187,7 @@ export function automaticOctaveRepair(source,instruments,registerIssues=[]){
   if(!profile&&relative){
    const prefix=source.slice(0,notes[0].blockStart+1),variable=prefix.match(/([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\\relative(?:\s+[^{}]*)?\s*\{$/)?.[1];
    if(variable){const staves=[...source.matchAll(/\\new\s+Staff\b/g)];const found=[];
-    for(let i=0;i<staves.length;i++){const staff=source.slice(staves[i].index,staves[i+1]?.index??source.length),name=staff.match(/midiInstrument\s*=\s*"([^"\n]+)"/)?.[1];if([...staff.matchAll(/\\([A-Za-z_][A-Za-z0-9_]*)/g)].some(m=>m[1]===variable)){const match=instruments.find(p=>gmNames.get(p.program)===name);if(match)found.push(match);}}
+    for(let i=0;i<staves.length;i++){const staff=source.slice(staves[i].index,staves[i+1]?.index??source.length),name=staff.match(/midiInstrument\s*=\s*#?\s*"([^"\n]+)"/)?.[1];if([...staff.matchAll(/\\([A-Za-z_][A-Za-z0-9_]*)/g)].some(m=>m[1]===variable)){const match=instruments.find(p=>gmNames.get(p.program)===name);if(match)found.push(match);}}
     if(found.length&&found.every(p=>p.program===found[0].program))profile=found[0];
    }
   }

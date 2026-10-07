@@ -35,14 +35,17 @@ async function open(){
  await module.evaluate();await module.namespace.initialized;
  return {get:id=>elements.get(id),persist:module.namespace.persist};
 }
-let ui=await open();assert.equal(ui.get('workflow').value,'direct');assert(ui.get('conceptPanel').hidden);assert.equal(ui.get('compose').textContent,'Komponieren');
+let ui=await open();assert(ui.get('system').value.includes('Oktavnotation:'));assert(ui.get('system').value.includes('absolute Tonhöhen'));const currentDefault=ui.get('system').value;
+// Upgrade a saved untouched v0.1.36 default; never overwrite a deliberate custom prompt.
+db.workspace={system:currentDefault.split(' Oktavnotation:')[0],workflow:'direct'};ui=await open();assert.equal(ui.get('system').value,currentDefault);db.workspace={system:'Meine eigene Vorgabe',workflow:'direct'};ui=await open();assert.equal(ui.get('system').value,'Meine eigene Vorgabe');db.workspace=null;ui=await open();
+assert.equal(ui.get('workflow').value,'direct');assert(ui.get('conceptPanel').hidden);assert.equal(ui.get('compose').textContent,'Komponieren');
 ui.get('workflow').value='concept';ui.get('workflow').onchange();ui.get('compositionReasoning').value='balanced';await ui.get('compose').onclick();
 assert.equal(requests.length,1);assert.equal(requests[0].operation,'concept');assert.equal(ui.get('draft').value,'Eine ruhige, kontrastreiche Idee.');assert(!ui.get('conceptPanel').hidden);assert(!ui.get('continueComposition').disabled);assert.equal(ui.get('code').value,'');
 ui.get('draft').value='Bearbeitet: mehr Legato und freiere Harmonik.';await ui.persist();assert.equal(db.workspace.draft,ui.get('draft').value);assert.equal(db.entries[0].draft,ui.get('draft').value);
 // A new page restores the paid idea and continues with the currently selected model.
 ui=await open();assert.equal(ui.get('draft').value,db.workspace.draft);assert(!ui.get('continueComposition').disabled);assert.equal(requests.length,1);
 ui.get('provider').value='two';ui.get('provider').onchange();ui.get('compositionReasoning').value='short';await ui.get('continueComposition').onclick();
-assert.equal(requests.length,2);assert.equal(requests[1].model,'two/composer');assert.equal(requests[1].compositionReasoning,'short');assert.equal(requests[1].draft,'Bearbeitet: mehr Legato und freiere Harmonik.');
+assert.equal(requests.length,2);assert.equal(requests[1].model,'two/composer');assert.equal(requests[1].compositionReasoning,'short');assert(requests[1].system.includes('Oktavnotation:'));assert.equal(requests[1].draft,'Bearbeitet: mehr Legato und freiere Harmonik.');
 assert.equal(ui.get('code').value,'LilyPond-Quelltext');assert.equal(ui.get('model').value,'two/composer');assert(ui.get('continueComposition').hidden);assert(ui.get('stageInfo').textContent.includes('actual/idea'));assert(ui.get('stageInfo').textContent.includes('actual/composer'));assert.equal(db.workspace.costs.composition,.03);
 ui=await open();assert.equal(ui.get('model').value,'two/composer');assert.equal(ui.get('compositionReasoning').value,'short');assert.equal(ui.get('draft').value,'Bearbeitet: mehr Legato und freiere Harmonik.');assert(ui.get('continueComposition').hidden);assert.equal(requests.length,2);
 ui.get('new').onclick();assert.equal(ui.get('code').value,'');assert.equal(ui.get('draft').value,'');assert(ui.get('conceptPanel').hidden);assert.equal(db.entries.length,1);

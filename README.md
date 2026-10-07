@@ -1,4 +1,4 @@
-# LilyPond Composition Lab v0.1.36
+# LilyPond Composition Lab v0.1.37
 
 WebApp für Computer, Android und iPad. Direkter Ablauf: Auftrag → KI → editierbarer LilyPond-Code → Online-Kompilierung → eingebettete Notenansicht und MIDI-Wiedergabe. Kein vorgeschalteter Entwurf, keine Composition Engine, kein neues Zwischenformat.
 
@@ -172,6 +172,18 @@ Fehler in v0.1.33: Die Optimierung der gesamten Hilfslinienzahl erlaubte eine Li
 Beim erneuten Kompilieren wird eine bereits eingefügte automatische Linie nur dann entfernt und neu beurteilt, wenn das Protokoll exakt denselben uneditierten Code und die erfolgreiche automatische MIDI-Prüfung nachweist. Manuell gesetzte oder anschließend bearbeitete Oktavlinien bleiben erhalten. Quelle: Gerou/Lusk, Essential Dictionary of Music Notation, Abschnitt Octave signs, Seiten 97–101 (https://musescore.org/sites/musescore.org/files/2022-02/EssentialDictionaryOfMusicNotation_0.pdf). Die Linie dient der Vermeidung zahlreicher Hilfslinien, beginnt an der ersten betroffenen Note und überbrückt lediglich kurze Pausen.
 
 Lokale Prüfung des gemeldeten korrigierten Quelltexts: statt Takt 11–24 nur Takt 20–24. Kein neuer Live-Renderer-/Android-Sichttest; die MIDI-Identitätsprüfung vor Übernahme bleibt aktiv.
+
+### v0.1.37 – Instrumentzuordnung bei der Oktavkorrektur · 07.10.2026
+
+Diagnose 03d5976d05fd4992b547aba15e014c52: Violine und Cello waren korrekt als GM 40/42 erkannt; 44 Violintöne lagen außerhalb des Tonumfangs. Die Korrektur scheiterte an `midiInstrument = #"violin"`: Die Instrumentzuordnung erkannte nur die Form ohne Scheme-Präfix. Die gültigen Formen `"name"`, `#"name"` und `# "name"` werden jetzt gemeinsam erkannt. Das gilt instrumentunabhängig in gemischten Besetzungen. Die Korrektur verändert weiterhin ausschließlich Oktavzeichen im Quelltext und prüft das erneut erzeugte MIDI; keine KI-Korrekturaufrufe.
+
+Die allgemeine Überprüfung fand zusätzlich fünf fehlende GM-Namen für bereits hinterlegte Bereichsprofile: Tremolo-/Pizzicato-Streicher, beide Streicher-Ensembles und Blechbläsergruppe. Die Zuordnung wurde mit den offiziellen LilyPond-Namen ergänzt, ohne neue Tonumfanggrenzen zu erfinden. Referenz: https://lilypond.org/doc/v2.24/Documentation/notation/midi-instruments.de.html und https://lilypond.org/doc/v2.24/Documentation/snippets.pdf (MIDI-Instrument-Demo).
+
+Auf ausdrücklichen Wunsch des Nutzers ist die konkrete Oktavregel jetzt Teil der sichtbaren, editierbaren allgemeinen Standardanweisung: absolute Tonhöhen statt relativer Fortschreibung, Erklärung `c = C3`, `c' = C4`, `c'' = C5`, `c, = C2`, korrekte Oktavzeichen an jedem Ton/Akkordton, beabsichtigte Register und klingender Instrumententonumfang. Sie wird für alle Modelle und für die konkrete Ausarbeitung beider Arbeitsweisen verwendet. Unveränderte frühere Standardanweisungen werden aktualisiert; bewusst bearbeitete eigene Vorgaben bleiben unverändert. Die App-Bereichsprüfung bleibt eine kostenfreie rechnerische Kontrolle, nicht ein zusätzlicher KI-Arbeitsschritt.
+
+Die konkrete hochgeladene Komposition wurde lokal anhand des Quelltexts geprüft: korrigierte Violine MIDI 62–81, Cello MIDI 43–65; vollständige Cellostimme und nachfolgender Score-Block byte-identisch. Ein zusätzlicher Online-Render dieses privaten Stücks wurde von der automatischen Freigabeprüfung abgelehnt und nicht erneut versucht. Die Veröffentlichung beruht auf lokalen Quelltextprüfungen, vorhandenen MIDI-Regressionen und simulierten Worker-Tests; keine Behauptung eines neuen Live-MIDI-/Hörtests dieses Stücks.
+
+Regressionen: Geige/Cello mit kumulativer relativer Oktavdrift, unveränderte gesunde Cellostimme, alle 28 Instrumente mit begrenztem Bereichsprofil in 84 normalen/Scheme-/gemischten Zuordnungen, sowie weiterhin explizite Ablehnung unbekannter oder widersprüchlicher Zuordnungen. Dies erweitert nicht die Unterstützung komplexer, bislang ausdrücklich nicht sicher auflösbarer LilyPond-Konstruktionen. Direkte Komposition, Klangvorstellungsablauf, Player und Notationsregeln bleiben unverändert.
 
 ### v0.1.36 – ausgewählte ComposeMe-Funktionen integriert · 07.10.2026
 

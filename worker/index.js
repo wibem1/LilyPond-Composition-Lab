@@ -1,6 +1,6 @@
 import {compositionCosts} from '../src/composition-costs.mjs';
-const VERSION="0.1.36";
-import {ideaMessages,compositionMessages,workflowFields,qualityChoice,reasoningFor,stageRecord} from '../src/composition-workflow.mjs';
+const VERSION="0.1.37";
+import {OCTAVE_RULE,ideaMessages,compositionMessages,workflowFields,qualityChoice,reasoningFor,stageRecord} from '../src/composition-workflow.mjs';
 import {exportHistory,importHistory,backupByteLimit} from '../src/history-backup.mjs';
 import {compositionAttribution} from '../src/composition-attribution.mjs';
 import {PAGE,ASSETS} from "./generated.js";
@@ -45,7 +45,8 @@ return parseMidi;})();
 const originalTask='Komponiere ein ruhiges, chromatisches Klavierstück in d-Moll mit 8 Takten.';
 const ORIGINAL_SYSTEM=`Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf.`;
 const TECHNICAL_SYSTEM=`Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Entwickle musikalisch eigenständiges Material, passende Stimmenführung, Phrasierung und einen nachvollziehbaren Spannungsbogen. Beachte die gewünschte Besetzung und Länge. Verwende einen Titel im Header, Tempo, layout und midi im score-Block sowie passende midiInstrument-Angaben. Antworte ausschließlich mit LilyPond-Code ohne Markdown und Erläuterungen. Es gibt keinen vorgeschalteten Entwurf. Technische Notation: Verwende absolute Tonhöhen mit ausdrücklich angegebenen Oktaven (ohne \\relative). Prüfe die tatsächlichen Oktavlagen; Verwende für jedes Instrument dessen spielbaren klingenden Tonumfang; für Klavier A0 bis C8. Diese Notationsregel macht keine Vorgaben zur musikalischen Gestaltung.`;
-const DEFAULT_SYSTEM=ORIGINAL_SYSTEM+` Notiere die musikalisch sinnvollen Ausdruckszeichen direkt in der Partitur: Dynamik und ihre Verläufe, Artikulation und Phrasierungsbögen, zum Instrument passende Pedalangaben sowie Tempoveränderungen. Verwende Verzierungen, wenn sie musikalisch passen.`;
+const LEGACY_DEFAULT_SYSTEM=ORIGINAL_SYSTEM+` Notiere die musikalisch sinnvollen Ausdruckszeichen direkt in der Partitur: Dynamik und ihre Verläufe, Artikulation und Phrasierungsbögen, zum Instrument passende Pedalangaben sowie Tempoveränderungen. Verwende Verzierungen, wenn sie musikalisch passen.`;
+const DEFAULT_SYSTEM=LEGACY_DEFAULT_SYSTEM+OCTAVE_RULE;
 // Besetzung wird aus dem ORIGINALAUFTRAG abgeleitet, niemals aus der KI-Realisierung.
 const ENSEMBLE_PATTERNS=[
   {id:'violin',regex:/\b(?:violine|geige|violin)\b/i,label:'Violine',hint:'Violine: separates Staff mit midiInstrument = "violin"'},
@@ -444,7 +445,7 @@ async function run(req,env){
   const task=clean(b.task);if(!task.trim())throw Error('Kompositionsauftrag fehlt.');
   try{await rendererReady()}catch(e){await log(env,'kostenstopp',runId,{error:e.message,durationMs:Date.now()-started});return json({error:e.message+' Keine KI wurde aufgerufen.',runId},412)}
   const suppliedSystem=clean(b.system).trim();
-  const system=!suppliedSystem||suppliedSystem===TECHNICAL_SYSTEM||suppliedSystem===ORIGINAL_SYSTEM?DEFAULT_SYSTEM:suppliedSystem;
+  const system=!suppliedSystem||suppliedSystem===TECHNICAL_SYSTEM||suppliedSystem===ORIGINAL_SYSTEM||suppliedSystem===LEGACY_DEFAULT_SYSTEM?DEFAULT_SYSTEM:suppliedSystem;
   const previousTitles=[...new Set((await listAll(env,'history/')).map(o=>{try{return JSON.parse(o.customMetadata?.summary||'{}').title||''}catch{return ''}}).filter(Boolean))];
   const titleContext=[...new Set([...previousTitles,clean(b.title)].filter(t=>t&&!/^Unbenannte[ _]Komposition$/i.test(t)))];
   const requestedTokens=parseInt(b.maxTokens);

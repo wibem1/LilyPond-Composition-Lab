@@ -151,3 +151,54 @@ for(let i=1;i<beforeLeft.length-1;i+=4){
  assert(offsets.every(n=>n===offsets[0]),'every interval within the original bar must survive');
 }
 console.log('PASS: exact uploaded Mozart diagnosis: legacy source recovered, pickup/right hand/bar intervals preserved, bass register restored; edited and unaccepted sources untouched.');
+
+// Valid Scheme-string MIDI names must map relative voices in mixed ensembles.
+const schemeDuet=String.raw`upper = \relative c'' {
+ c4 d e f | g'4 a b c | d'4 e f g | a'1 | c,4 d e f | c,1 |
+}
+lower = \relative c { c4 d e f | c4 d e f | c4 d e f | c1 | d2 e | c1 | }
+\score { <<
+ \new Staff \with { midiInstrument = #"violin" } \upper
+ \new Staff \with { midiInstrument = #"cello" } { \clef bass \lower }
+>> \layout {} \midi {} }`;
+const strings=[{status:'checked',program:40,channel:0,low:55,high:105},{status:'checked',program:42,channel:1,low:36,high:81}];
+for(const syntax of ['#"','"','# "']){
+ const source=schemeDuet.replaceAll('#"',syntax),correction=automaticOctaveRepair(source,strings);
+ assert.equal(correction.method,'relative-measure-drift',correction.error);
+ assert(octaveOnlyChange(source,correction.code));
+ assert.equal(correction.code.slice(correction.code.indexOf('lower =')),source.slice(source.indexOf('lower =')),'healthy cello and staff assignments must remain byte-identical');
+ const before=relativeOctavePlan(source).filter(t=>t.block===0),after=relativeOctavePlan(correction.code).filter(t=>t.block===0);
+ assert(before.some(t=>midiKeyForTest(t.token,t.octave)>105));assert(after.every(t=>midiKeyForTest(t.token,t.octave)>=55&&midiKeyForTest(t.token,t.octave)<=105));
+ assert.deepEqual(before.map(t=>midiKeyForTest(t.token,t.octave)%12),after.map(t=>midiKeyForTest(t.token,t.octave)%12));
+}
+assert(automaticOctaveRepair(schemeDuet.replace('#"violin"','#"unknown instrument"'),strings).error,'unknown mapping must still fail explicitly');
+const conflict=schemeDuet.replace('\\clef bass \\lower','\\clef bass \\upper');assert(automaticOctaveRepair(conflict,strings).error,'same voice mapped to different instruments remains ambiguous');
+console.log('PASS: mixed violin/cello Scheme strings (#"name", "name", # "name") map safely; only violin octave marks change; healthy cello stays identical; unknown/conflicting assignments fail explicitly.');
+
+// Cover every GM instrument with a bounded range profile, not violin alone.
+const instrumentNames=new Map([
+ [0,'acoustic grand'],[1,'bright acoustic'],[2,'electric grand'],[3,'honky-tonk'],[4,'electric piano 1'],[5,'electric piano 2'],
+ [40,'violin'],[41,'viola'],[42,'cello'],[43,'contrabass'],[44,'tremolo strings'],[45,'pizzicato strings'],[46,'orchestral harp'],[47,'timpani'],[48,'string ensemble 1'],[49,'string ensemble 2'],
+ [56,'trumpet'],[57,'trombone'],[58,'tuba'],[59,'muted trumpet'],[60,'french horn'],[61,'brass section'],
+ [68,'oboe'],[69,'english horn'],[70,'bassoon'],[71,'clarinet'],[72,'piccolo'],[73,'flute']
+]);
+const {checkInstrumentRanges}=await import('../src/instrument-ranges.mjs');
+let mappingChecks=0;
+for(const [program,name] of instrumentNames){
+ const profile=checkInstrumentRanges({events:[{type:'program',ch:0,value:program},{type:'on',ch:0,key:60,sec:0}]}).instruments[0];
+ assert.equal(profile.status,'checked');
+ const other={...strings.find(p=>p.program!==program),channel:1};
+ for(const prefix of ['', '#', '# ']){
+  const raw=String.raw`part = \relative c'''''' { c4 d e f }
+other = \relative c' { c4 d e f }
+\score { << \new Staff \with { midiInstrument = NAME } \part \new Staff \with { midiInstrument = OTHER } \other >> \layout {} \midi {} }`;
+  const source=raw.replace('NAME',prefix+'"'+name+'"').replace('OTHER','"'+(other.program===40?'violin':'cello')+'"');
+  const corrected=automaticOctaveRepair(source,[profile,other]);assert(corrected.code,name+' '+prefix+': '+corrected.error);
+  assert(octaveOnlyChange(source,corrected.code));
+  assert.equal(corrected.code.slice(corrected.code.indexOf('other =')),source.slice(source.indexOf('other =')));
+  const notes=relativeOctavePlan(corrected.code).filter(t=>t.block===0).map(t=>midiKeyForTest(t.token,t.octave));
+  assert(notes.every(key=>key>=profile.low&&key<=profile.high),name);mappingChecks++;
+ }
+}
+assert.equal(mappingChecks,84);
+console.log('PASS: all 28 instruments with bounded range profiles, 84 plain/Scheme/mixed assignment cases, including previously unmapped string ensembles and brass section; unaffected companion voice unchanged.');
