@@ -24,6 +24,7 @@ export function continuationMessages(original,task){return [
 export function appendContinuation(original,answer){
  const suffix=lilySource(answer);
  if(!suffix.trim())throw Error('Keine Fortsetzung empfangen. Original erhalten.');
+ if(original.length+suffix.length>250000)throw Error('Die vollständige Fassung überschreitet die Dokumentgrenze. Ergänzung im Protokoll gesichert; Original erhalten.');
  if(/\\(?:version|header)\b/.test(suffix)||suffix.includes(original.trim())||original.length>150&&suffix.includes(original.slice(-150).trim()))throw Error('Die KI hat vorhandenen Text wiederholt. Fortsetzung verworfen; Original erhalten.');
  for(const m of original.matchAll(/\b([A-Za-z][A-Za-z0-9]*)\s*=\s*(?:\\absolute|\\relative|\\fixed|\{)/g)){
   if(new RegExp('\\b'+m[1]+'\\s*=').test(suffix))throw Error('Die KI hat eine vorhandene Stimme neu definiert. Original erhalten.');

@@ -11,6 +11,7 @@ assert(sourceStatus('%{ nested %{ x %} %}\n\\score { c4^"a \\" b" }').complete);
 assert.throws(()=>appendContinuation(original,original+suffix),/wiederholt/);
 assert.throws(()=>appendContinuation(original,'right = { c4 }'),/neu definiert/);
 assert.throws(()=>appendContinuation(original,''),/Keine Fortsetzung/);
+assert.throws(()=>appendContinuation('x'.repeat(249999),' ab'),/Dokumentgrenze/);
 assert.equal(appendContinuation("x = { c'1",'6 d16 }'),"x = { c'16 d16 }");
 const event=d=>'data: '+JSON.stringify(d)+'\r\n\r\n';
 const text=event({model:'google/gemini-4-argon',choices:[{delta:{content:'ä '+original}}]})+event({choices:[{delta:{content:suffix},finish_reason:'stop'}],usage:{cost:.02}})+'data: [DONE]\r\n\r\n';
