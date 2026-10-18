@@ -19,5 +19,5 @@ assert.deepEqual(keys(window(37+1/3,3.9)),[60,64,67],'tied continuation has no n
 for(const n of window(37+1/3)){assert(off.find(e=>e.key===n.key&&e.ch===0&&e.tick>n.tick).sec>41.2,'all tied tones sustain');}
 assert.deepEqual(m.events.filter(e=>e.type==='control'&&e.cc===64).map(e=>e.value),[127,0],'pedal survives rolled voices');
 assert(window(43+1/3).every(e=>e.vel>window(41+1/3)[0].vel),'p/f applies to every rolled tone');
-const source=await readFile('tests/fixtures/arpeggio.ly','utf8');const transformed=expressionPlayback(source);assert(transformed.code.includes('\\labArpeggioPlayback \\articulate'));assert(transformed.code.includes(source.slice(source.indexOf('\\score')).replace('\\midi {}','')));
+const source=await readFile('tests/fixtures/arpeggio.ly','utf8');const transformed=expressionPlayback(source);assert(transformed.code.includes('\\labArpeggioPlayback \\labArticulateVoices'));assert(transformed.code.includes(source.slice(source.indexOf('\\score')).replace('\\midi {}','')));
 console.log('PASS: real LilyPond 2.26 MIDI: up/down, one-shot direction, bracket, connected/independent staves, short-note spread, held notes, ties, dynamics and sustain pedal; original score retained.');

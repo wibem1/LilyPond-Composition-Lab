@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {compositionMessages,ideaMessages,previewMessages,cleanGuidelines} from '../src/composition-workflow.mjs';
 import {readFile} from 'node:fs/promises';
 import worker from '../worker/index.js';
 class Bucket{
@@ -31,7 +32,7 @@ const response=await call('/api/run-stream',{...input,runId:firstRun,operation:'
 const idea=events.find(e=>e.type==='result').result;
 assert.equal(idea.operation,'concept');assert.equal(paid.length,1);assert.equal(rendererCalls,0);
 assert.deepEqual(paid[0].reasoning,{effort:'medium'});assert.equal(paid[0].max_tokens,8000);
-assert(paid[0].messages[0].content.includes('Noch keine Notation'));assert(paid[0].messages[1].content.includes(input.system));
+assert(paid[0].messages[0].content.includes('Noch keine Notation'));assert(paid[0].messages[0].content.includes('Eigene musikalische Wünsche.'));assert(!paid[0].messages[0].content.includes('Es gibt keinen vorgeschalteten Entwurf.'));
 assert.equal(idea.ideaStage.actualModel,'actual/idea');assert.equal(idea.ideaStage.quality,'balanced');
 assert.equal((await value('/api/workspace')).workspace.historyId,idea.historyId);
 assert.equal((await value('/api/history/'+idea.historyId)).entry.techout,'');
@@ -63,7 +64,7 @@ const before=paid.length;assert.equal((await call('/api/run',{...second,runId:'a
 // Direct mode still sends exactly the original pair of prompts, once.
 const direct=await value('/api/run',{...input,runId:'aaaa1111bbbb6666'});
 assert.equal(paid.length,before+1);assert.equal(direct.workflow,'direct');assert.equal(direct.ideaStage,null);
-assert.deepEqual(paid.at(-1).messages,[{role:'system',content:input.system},{role:'user',content:input.task}]);
+assert.deepEqual(paid.at(-1).messages,compositionMessages(input.task,input.system));
 // A truncated idea stays visible, saved and explicitly marked for editing.
 truncateConcept=true;const partial=await value('/api/run',{...input,operation:'concept',runId:'aaaa1111bbbb7777'});assert(partial.warning.includes('abgeschnitten'));assert.equal(partial.ideaStage.finishReason,'length');assert.equal((await value('/api/history/'+partial.historyId)).entry.draft,partial.draft);truncateConcept=false;
 console.log('PASS: optional staged composition, edited idea, changed model/quality, saved intermediate result, preflight/provider failures, resume without repeating first step, actual model attribution, combined costs/diagnosis and unchanged direct prompts.');
@@ -83,3 +84,16 @@ const corrupt=structuredClone(backup);delete corrupt.artifacts[Object.keys(corru
 const hostile=structuredClone(backup);hostile.artifacts['/download/..%2Fsettings%2Fkey.json']='e30=';assert.equal((await call('/api/history-backup',hostile,'POST',pristine)).status,400);assert.equal(pristine.BUCKET.items.size,0);
 const foreign=await worker.fetch(new Request('https://lab.test/api/history-backup',{method:'POST',headers:{Origin:'https://evil.test','Content-Type':'application/json'},body:JSON.stringify(backup)}),pristine,{});assert.equal(foreign.status,403);assert.equal(paid.length,before+2,'backups and restores make no AI requests');
 console.log('PASS: backup/restore sources, ideas, costs, per-stage choices, dates, binary MIDI, score pages and combined diagnoses; duplicate imports and existing workspace preserved; malformed/missing/path-traversal/cross-origin data rejected; keys and SoundFonts excluded; no paid calls.');
+
+const custom='Entwerfe zuerst eine Kompositionsidee. Komponiere danach  gemäß dem Auftrag  ein vollständiges LilyPond-Dokument. Verwende ein synkopiertes Motiv.';
+for(const draft of ['', 'Meine bearbeitete Idee']){
+ const expected=draft?compositionMessages(input.task,custom,draft):ideaMessages(input.task,custom);
+ assert.deepEqual(previewMessages(input.task,custom,'concept',draft,!!draft),expected);
+ assert(expected[0].content.includes('synkopiertes Motiv'));
+ assert(!expected[0].content.includes('Entwerfe zuerst eine Kompositionsidee.'));
+ assert(!expected[0].content.includes('Komponiere danach'));
+ if(draft){assert(expected[0].content.includes('entwickle keine neue'));assert(expected[1].content.includes(draft));}
+}
+assert.deepEqual(previewMessages(input.task,custom,'direct'),compositionMessages(input.task,custom));
+assert.equal(cleanGuidelines('Komponiere nach dem Auftrag direkt ein vollständiges LilyPond-Dokument. Eigener Wunsch.'),'Eigener Wunsch.');
+console.log('PASS: shared preview equals actual stage messages, old contradictory workflow instructions removed, custom musical wishes retained and edited idea governs realisation.');

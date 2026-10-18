@@ -19,3 +19,10 @@ const restoreStorage=storage();restoreStorage.setItem('lilypond-pending-run',JSO
 const broken=new RunClient({fetch:async(url,options)=>url==='/api/run-stream'?new Response('{"type":"started","phase":"KI komponiert"}\n',{headers:{'Content-Type':'application/x-ndjson'}}):request(url,options),storage:storage(),delay:async()=>{},online:()=>true});assert.deepEqual(await broken.start({runId:id}),saved);assert(reported.some(e=>e.event==='stream_error'));
 const failed=new RunClient({fetch:async(url,options)=>url==='/api/client-events'?Response.json({saved:true}):Response.json({status:'failed',httpStatus:502,result:{error:'Provider failed'}}),storage:storage(),delay:async()=>{},online:()=>true});await assert.rejects(failed.recover(id),/Provider failed/);assert.equal(failed.pendingRunId,'');
 console.log('PASS: browser fetch failure, truncated stream and reload recover existing result without resubmitting; client events flushed, secrets excluded, terminal server error not retried.');
+// Concurrent requests in one runtime cannot both start a paid execution.
+let concurrentCalls=0,unlock;const block=new Promise(r=>unlock=r),raceTasks=[];
+const concurrentId='dd18000020261018aabbccddeeff0001';
+const start=()=>streamRun(new Request('https://test/run'),{},{waitUntil:p=>raceTasks.push(p)},concurrentId,async()=>{concurrentCalls++;await block;return Response.json({answer:'Once'});},io);
+const [one,two]=await Promise.all([start(),start()]);assert((await two.json()).resume);unlock();await one.text();await Promise.all(raceTasks);assert.equal(concurrentCalls,1);
+const absent=new RunClient({fetch:async url=>Response.json(url.startsWith('/api/run-status')?{status:'unknown'}:{saved:true}),storage:storage(),delay:async()=>{}});absent.write('lilypond-pending-run',{runId:concurrentId});await assert.rejects(absent.recover(),/nicht bestätigt/);assert.equal(absent.pendingRunId,'');
+console.log('PASS: concurrent same-runtime requests execute once; confirmed missing run clears pending marker without automatic resubmission.');

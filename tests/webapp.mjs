@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {compositionMessages,cleanGuidelines} from '../src/composition-workflow.mjs';
 import {readFile} from 'node:fs/promises';
 import worker from '../worker/index.js';
 class MemoryBucket{
@@ -11,7 +12,7 @@ class MemoryBucket{
 const env={BUCKET:new MemoryBucket(),LAB_KEY_ENCRYPTION_KEY:btoa('01234567890123456789012345678901')};
 const tiny=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-response.json',import.meta.url),'utf8')).result;
 const driftMidi=(await readFile(new URL('./fixtures/luna-octave-drift.mid',import.meta.url))).toString('base64');let rendererMidi=null;
-let expressionError=false,localRepairSource=null,localRepairMidi=null,ottavaTest='same';
+let musicXmlLogs='',expressionError=false,localRepairSource=null,localRepairMidi=null,ottavaTest='same';
 let rendererLogs='';
 let paid=0,rendererDown=false,compileError=false,requests=[],rejectKey=false,redirectKey=false;
 let repairAnswer=null,repairMidi=null,repairFinish='stop',compositionFinish='stop',reportedModel=undefined;
@@ -21,7 +22,7 @@ const attributedAnswer='% KI-Modell: test/model\n'+answer.replace('title = "Test
 const withoutOttava=s=>s.replace(/\\ottava #-?\d+\s*/g,'').replace(/\s+/g,' ').trim();
 class Socket extends EventTarget{
  accept(){}
- send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:rendererLogs&&d.params.src.includes('header')?{...tiny,logs:rendererLogs}:d.params.src.includes('\\ottava #')&&ottavaTest==='error'?{err:'ottava rendering failed'}:d.params.src.includes('\\ottava #')&&ottavaTest==='different'?{...tiny,midi:driftMidi}:localRepairSource&&d.params.src.includes(localRepairSource)?{...tiny,midi:localRepairMidi}:expressionError&&d.params.src.includes('labExpressionText')?{err:'expression failed',logs:'synthetic unsupported expression'}:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
+ send(s){const d=JSON.parse(s);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:d.id,result:d.params.src.includes('labMusicXmlCapture')?{...tiny,logs:musicXmlLogs}:rendererLogs&&d.params.src.includes('header')?{...tiny,logs:rendererLogs}:d.params.src.includes('\\ottava #')&&ottavaTest==='error'?{err:'ottava rendering failed'}:d.params.src.includes('\\ottava #')&&ottavaTest==='different'?{...tiny,midi:driftMidi}:localRepairSource&&d.params.src.includes(localRepairSource)?{...tiny,midi:localRepairMidi}:expressionError&&d.params.src.includes('labExpressionText')?{err:'expression failed',logs:'synthetic unsupported expression'}:compileError&&d.params.src.includes('header')?{err:'syntax error',logs:'line 3: invalid code'}:repairMidi&&d.params.src.includes("c''4")?{...tiny,midi:repairMidi}:rendererMidi?{...tiny,midi:rendererMidi}:tiny})})))}
  close(){}
 }
 globalThis.fetch=async(url,opts={})=>{
@@ -34,7 +35,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('v0.1.38'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('V1.1.0'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -46,7 +47,7 @@ assert(!JSON.stringify(await (await call('/api/diagnosis?runId=aaaaffffbbbbcccc'
 rejectKey=false;
 redirectKey=true;const redirect=await call('/api/key-check',{method:'POST',data:{}});assert.equal(redirect.status,400);assert((await redirect.json()).error.includes('Weiterleitung'));redirectKey=false;
 const runId='0123456789abcdef',data={model:'test/model',task:'Freie Komposition',system:'MY EDITED SYSTEM',runId,title:'Test',maxTokens:24000};
-const result=await value('/api/run',{method:'POST',data});assert.equal(paid,1);assert.equal(result.answer,attributedAnswer);assert(result.compiled.pages.length);assert(result.compiled.url.endsWith('.mid'));assert.equal(requests[0].messages[0].content,'MY EDITED SYSTEM');assert.equal(requests[0].max_tokens,24000);assert(!('reasoning' in requests[0]));
+const result=await value('/api/run',{method:'POST',data});assert.equal(paid,1);assert.equal(result.answer,attributedAnswer);assert(result.compiled.pages.length);assert(result.compiled.url.endsWith('.mid'));assert.deepEqual(requests[0].messages,compositionMessages(data.task,data.system));assert.equal(requests[0].max_tokens,24000);assert(!('reasoning' in requests[0]));
 assert.equal((await call(result.compiled.pages[0].url)).headers.get('Content-Type'),'image/svg+xml');assert.equal((await call(result.compiled.url)).status,200);
 const history=(await value('/api/history/'+result.historyId)).entry;assert.equal(history.techout,attributedAnswer);assert.equal(history.system,'MY EDITED SYSTEM');assert.equal(history.pages.length,result.compiled.pages.length);
 const ws=(await value('/api/workspace')).workspace;assert.equal(ws.techout,attributedAnswer);assert.equal(ws.compositionModel,'test/model');
@@ -55,7 +56,7 @@ const repeated=await value('/api/run',{method:'POST',data:{...data,runId:'111122
 assert.equal(repeated.title,'Nächtlicher Dialog');assert.equal(repeated.answer,attributedAnswer.replace('Teststück','Nächtlicher Dialog'));assert.equal(repeated.rawAnswer,answer);
 assert.equal(repeated.titleWarning,'');assert(Math.abs(repeated.usage.cost-.0003)<1e-9);
 const namingDiag=await (await call('/api/diagnosis?runId=1111222233334444')).json();assert(Math.abs(namingDiag.costs.total-.0003)<1e-9);assert.equal(namingDiag.entries.filter(e=>e.operation==='title'&&e.event==='antwort').length,2);
-assert.equal(requests[1].messages.length,2);assert.equal(requests[0].messages.length,2);assert.equal(requests[1].messages[0].content,data.system);assert.equal(requests[1].messages[1].content,data.task);
+assert.equal(requests[1].messages.length,2);assert.equal(requests[0].messages.length,2);assert.deepEqual(requests[1].messages,compositionMessages(data.task,data.system));assert.equal(requests[1].messages[1].content,data.task);
 assert.equal((await value('/api/history/'+repeated.historyId)).entry.title,repeated.title);
 assert.equal((await value('/api/workspace')).workspace.title,repeated.title);
 assert.equal(await (await call(repeated.downloads[0].url)).text(),repeated.answer);
@@ -66,13 +67,14 @@ compileError=false;namingDown=true;
 const defaultIndex=requests.length;
 const namingFailed=await value('/api/run',{method:'POST',data:{...data,system:'',runId:'4444555566667777'}});assert(namingFailed.titleWarning.includes('ursprünglichen Titel'));assert.equal(namingFailed.answer,attributedAnswer);assert(namingFailed.compiled.url);assert.equal((await value('/api/history/'+namingFailed.historyId)).entry.techout,attributedAnswer);namingDown=false;
 const originalPrompt=requests[defaultIndex].messages[0].content;
-assert(originalPrompt.includes('Es gibt keinen vorgeschalteten Entwurf.'));assert(originalPrompt.includes('Pedalangaben'));assert(originalPrompt.includes('Verzierungen, wenn sie musikalisch passen')); assert(!originalPrompt.includes('Technische Notation'));assert(originalPrompt.includes('Oktavnotation:'));assert(originalPrompt.includes('absolute Tonhöhen'));assert(originalPrompt.includes('c = C3'));assert(originalPrompt.includes("c' = C4"));assert(originalPrompt.includes('kein \\relative'));assert(originalPrompt.includes('jeder Note und jedem Akkordton'));
+assert(!originalPrompt.includes('Es gibt keinen vorgeschalteten Entwurf.'));assert(originalPrompt.includes('Kein Zwischenhalt.'));assert(originalPrompt.includes('Pedalangaben'));assert(originalPrompt.includes('Verzierungen, wenn sie musikalisch passen')); assert(!originalPrompt.includes('Technische Notation'));assert(originalPrompt.includes('Oktavnotation:'));assert(originalPrompt.includes('absolute Tonhöhen'));assert(originalPrompt.includes('c = C3'));assert(originalPrompt.includes("c' = C4"));assert(originalPrompt.includes('kein \\relative'));assert(originalPrompt.includes('jeder Note und jedem Akkordton'));
 // Restore the unchanged technical standard stored by v0.1.7/8, retaining edited prompts.
-const legacyPrompt=originalPrompt.split(' Notiere die musikalisch')[0];
+const legacyPrompts=JSON.parse(await readFile(new URL('./fixtures/legacy-prompts.json',import.meta.url),'utf8'));
+const legacyPrompt=legacyPrompts.original;
 const technicalPrompt=legacyPrompt+' Technische Notation: Verwende absolute Tonhöhen mit ausdrücklich angegebenen Oktaven (ohne \\relative). Prüfe die tatsächlichen Oktavlagen; Verwende für jedes Instrument dessen spielbaren klingenden Tonumfang; für Klavier A0 bis C8. Diese Notationsregel macht keine Vorgaben zur musikalischen Gestaltung.';
 const migrationIndex=requests.length;namingDown=true;
 await value('/api/run',{method:'POST',data:{...data,system:technicalPrompt,runId:'5555666677778888'}});
-assert.equal(requests[migrationIndex].messages[0].content,originalPrompt);assert.equal((await value('/api/workspace')).workspace.system,originalPrompt);namingDown=false;
+assert.equal(requests[migrationIndex].messages[0].content,originalPrompt);assert.equal((await value('/api/workspace')).workspace.system,originalPrompt.split('Zusätzliche musikalische und technische Vorgaben:\n')[1]);namingDown=false;
 rendererMidi=driftMidi;
 const drift=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Oktavtest',runId:'88889999aaaabbbb'}});
 assert(drift.warning.includes('Tonumfang prüfen'));assert(drift.url);assert.equal((await call(drift.url)).status,200);assert(drift.pages.length);rendererMidi=null;
@@ -97,6 +99,17 @@ console.log('PASS: legacy 8000 budget raised to 64000; explicit 24000 retained; 
 
 rendererMidi=null;repairMidi=null;compileError=false;
 const expressionCompiled=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Expression test',runId:'abcdef1234567890'}});assert.equal(expressionCompiled.expressionPlayback.mode,'articulate');
+assert.equal(expressionCompiled.midiTimingPolicy,'independent-voices-v1');
+const policyEntry={id:'abcdef1234567892',title:'Playback migration',techout:answer,format:'lilypond',midiUrl:expressionCompiled.url,midiTimingPolicy:expressionCompiled.midiTimingPolicy,costs:{composition:.119504,realisation:0}};
+const beforeMigrationPaid=paid;
+await value('/api/history',{method:'POST',data:policyEntry});
+assert.equal((await value('/api/history/'+policyEntry.id)).entry.midiTimingPolicy,'independent-voices-v1');
+await value('/api/workspace',{method:'POST',data:{workspace:policyEntry}});
+assert.equal((await value('/api/workspace')).workspace.midiTimingPolicy,'independent-voices-v1');
+await value('/api/workspace',{method:'POST',data:{workspace:{...policyEntry,midiTimingPolicy:undefined}}});
+assert.equal((await value('/api/workspace')).workspace.midiTimingPolicy,'');
+assert.equal(paid,beforeMigrationPaid);
+
 expressionError=true;
 const expressionFallback=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Expression fallback',runId:'abcdef1234567891'}});assert.equal(expressionFallback.expressionPlayback.mode,'fallback');assert(expressionFallback.url);assert(expressionFallback.warning.includes('normale MIDI'));assert(expressionFallback.expressionPlayback.error.includes('expression failed'));
 expressionError=false;
@@ -104,7 +117,7 @@ console.log('PASS: Worker records enhanced playback and safely returns standard 
 
 const legacyIndex=requests.length;namingDown=true;
 await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',system:legacyPrompt,runId:'abcd1234abcd4321'}});assert.equal(requests[legacyIndex].messages[0].content,originalPrompt);namingDown=false;
-const expressionOnlyPrompt=originalPrompt.split(' Oktavnotation:')[0];
+const expressionOnlyPrompt=legacyPrompts.expression;
 const expressionMigrationIndex=requests.length;namingDown=true;
 await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',system:expressionOnlyPrompt,runId:'abcd1234abcd4322'}});
 assert.equal(requests[expressionMigrationIndex].messages[0].content,originalPrompt);namingDown=false;
@@ -132,7 +145,7 @@ localRepairSource=null;rendererMidi=null;
 // Short thinking is explicit, retained in memory/history and logged; default stays unrestricted.
 for(const k of [...env.BUCKET.items.keys()])if(k.startsWith('history/'))await env.BUCKET.delete(k);namingDown=false;
 const shortRun=await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',runId:'aa0011223344556688',compositionReasoning:'short'}});
-const shortRequest=requests.findLast(r=>r.messages[0].content==='MY EDITED SYSTEM');assert.deepEqual(shortRequest.reasoning,{effort:'low'});assert.equal(shortRequest.max_tokens,24000);
+const shortRequest=requests.findLast(r=>r.messages[0].content===compositionMessages(data.task,data.system)[0].content);assert.deepEqual(shortRequest.reasoning,{effort:'low'});assert.equal(shortRequest.max_tokens,24000);
 assert.equal((await value('/api/workspace')).workspace.compositionReasoning,'short');assert.equal((await value('/api/history/'+shortRun.historyId)).entry.compositionReasoning,'short');
 assert((await value('/api/diagnosis?runId=aa0011223344556688')).entries.some(e=>e.event==='anfrage'&&e.stage==='composition'&&e.reasoning_requested.effort==='low'));
 console.log('PASS: shipped local repair costs zero AI calls and passes MIDI range; explicit short thinking, unchanged note budget, saved selection and diagnostic trace.');
@@ -215,19 +228,19 @@ console.log('PASS: API-reported model is stored in source, composer, history, wo
 
 // Sonnet 5.5 must receive adaptive effort, not the ineffective legacy budget.
 namingDown=true;
-for(const [selection,runId] of [['short','abcd1111abcd3333'],['balanced','abcd1111abcd5555'],['default','abcd1111abcd4444']]){
+for(const [selection,runId] of [['short','abcd1111abcd3333'],['balanced','abcd1111abcd5555'],['high','abcd1111abcd6666'],['xhigh','abcd1111abcd7777'],['default','abcd1111abcd4444']]){
  const at=requests.length;
  const sonnet=await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',model:'anthropic/claude-sonnet-5.5',compositionReasoning:selection,runId}});
  const request=requests[at];
- if(selection!=='default')assert.deepEqual(request.reasoning,{effort:selection==='short'?'low':'medium'});
+ if(selection!=='default')assert.deepEqual(request.reasoning,{effort:selection==='short'?'low':selection==='high'?'high':selection==='xhigh'?'xhigh':'medium'});
  else assert(!('reasoning' in request));
  assert.equal(request.max_tokens,24000);
- assert.deepEqual(request.messages,[{role:'system',content:data.system},{role:'user',content:data.task}]);
+ assert.deepEqual(request.messages,compositionMessages(data.task,data.system));
  assert.equal((await value('/api/history/'+sonnet.historyId)).entry.compositionReasoning,selection);
  assert.equal((await value('/api/workspace')).workspace.compositionReasoning,selection);
  const diag=await value('/api/diagnosis?runId='+runId);
  const logged=diag.entries.find(e=>e.event==='anfrage'&&!e.operation);
- assert.deepEqual(logged.reasoning_requested,selection==='default'?'provider_default':{effort:selection==='short'?'low':'medium'});
+ assert.deepEqual(logged.reasoning_requested,selection==='default'?'provider_default':{effort:selection==='short'?'low':selection==='high'?'high':selection==='xhigh'?'xhigh':'medium'});
 }
 namingDown=false;
 console.log('PASS: Sonnet 5.5 short uses low effort; default omits reasoning control; prompts, total budget, saved choices and diagnostic request match.');
@@ -239,21 +252,27 @@ assert.equal((await value('/api/history/'+balancedSaved.id)).entry.compositionRe
 assert.equal((await value('/api/history')).entries.find(e=>e.id===balancedSaved.id).compositionReasoning,'balanced');
 await value('/api/workspace',{method:'POST',data:{workspace:{...ws,compositionReasoning:'balanced'}}});
 assert.equal((await value('/api/workspace')).workspace.compositionReasoning,'balanced');
-assert(html.includes('<option value="balanced">Ausgewogen'));
+assert(html.includes('<option value="balanced">Mittel'));
+assert(html.includes('<option value="high">Hoch</option>'));
+assert(html.includes('<option value="default">Automatisch</option>'));
+const highSaved=(await value('/api/history',{method:'POST',data:{title:'High save',techout:answer,compositionReasoning:'high'}})).entry;
+assert.equal((await value('/api/history/'+highSaved.id)).entry.compositionReasoning,'high');
+await value('/api/workspace',{method:'POST',data:{workspace:{...ws,compositionReasoning:'high'}}});
+assert.equal((await value('/api/workspace')).workspace.compositionReasoning,'high');
 console.log('PASS: balanced sends medium effort and survives composition history, manual history save/reload and workspace save/reload.');
 
 // Same control is used for every provider; no Claude-only branch remains.
 namingDown=true;let qualityIndex=0;
 for(const model of ['openai/test-model','google/test-model','other/test-model']){
- for(const selection of ['short','balanced','default']){
+ for(const selection of ['short','balanced','high','default']){
   const at=requests.length,runId='abcd2222'+String(++qualityIndex).padStart(8,'0');
   const composed=await value('/api/run',{method:'POST',data:{...data,key:'sk-or-v1-TESTKEY',model,compositionReasoning:selection,runId}});
-  assert.deepEqual(requests[at].reasoning,selection==='default'?undefined:{effort:selection==='short'?'low':'medium'});
+  assert.deepEqual(requests[at].reasoning,selection==='default'?undefined:{effort:selection==='short'?'low':selection==='high'?'high':selection==='xhigh'?'xhigh':'medium'});
   assert.equal((await value('/api/history/'+composed.historyId)).entry.compositionReasoning,selection);
  }
 }
 namingDown=false;
-console.log('PASS: all three quality choices apply across provider IDs and survive history reload.');
+console.log('PASS: all four quality choices apply across provider IDs and survive history reload.');
 
 // The notation optimization must fall back if the renderer changes playback.
 const highPiano=String.raw`\version "2.24.3"
@@ -312,3 +331,33 @@ compositionFinish='length';const truncatedCorrection=await value('/api/run',{met
 rendererLogs='synthetic.ly:17: warning: bar check failed at: 1/4';const stillWarning=await value('/api/run',{method:'POST',data:{...repairInput,runId:'abcde00000000005'}});assert(stillWarning.compiled.warning.includes('bar check failed'));rendererLogs='';
 rendererDown=true;const beforeOffline=paid;const offlineCorrection=await call('/api/run',{method:'POST',data:{...repairInput,runId:'abcde00000000006'}});assert.equal(offlineCorrection.status,412);assert.equal(paid,beforeOffline);rendererDown=false;
 console.log('PASS: compiler log errors override misleading files; bar warnings stay visible/playable without AI costs; targeted one-call correction preserves original, quality, costs and diagnostics, recompiles, handles truncation and stops before paid calls when renderer is offline.');
+
+import {supportsXhigh,reasoningFor} from '../src/composition-workflow.mjs';
+assert(supportsXhigh('openai/gpt-5.6-sol'));assert(!supportsXhigh('google/gemini-3.8-flash'));assert.deepEqual(reasoningFor('xhigh','openai/gpt-5.6-sol'),{effort:'xhigh'});assert.throws(()=>reasoningFor('xhigh','google/gemini-3.8-flash'));
+
+// The export route reads the exact source with the real compiler-tree contract,
+// never invokes the paid model and never replaces score/MIDI/workspace state.
+const xmlSource=await readFile(new URL('./fixtures/gaenseliesel.ly',import.meta.url),'utf8');
+const xmlTree=await readFile(new URL('./fixtures/musicxml-gaenseliesel-tree.json',import.meta.url),'utf8');
+musicXmlLogs='LABXML-BEGIN'+xmlTree+'LABXML-END';
+const paidBeforeXml=paid,workspaceBeforeXml=JSON.stringify(await value('/api/workspace'));
+const exported=await value('/api/export-musicxml',{method:'POST',data:{code:xmlSource,title:'Gänseliesel',runId:'abcde12345abcde12345'}});
+assert.equal(exported.paidCalls,0);assert.equal(paid,paidBeforeXml);
+assert.deepEqual(exported.stats,{parts:1,staves:2,measures:32,notes:456});assert.deepEqual(exported.warnings,[]);
+const xmlResponse=await call(exported.url);
+assert(xmlResponse.headers.get('Content-Type').includes('application/vnd.recordare.musicxml+xml'));
+assert(xmlResponse.headers.get('Content-Disposition').includes('attachment'));
+assert((await xmlResponse.text()).includes('<score-partwise version="4.0">'));
+assert.equal(JSON.stringify(await value('/api/workspace')),workspaceBeforeXml);
+const exportDiagnosis=await value('/api/diagnosis?runId=abcde12345abcde12345');assert(exportDiagnosis.entries.some(e=>e.event==='musicxml-export'&&e.paidCalls===0));
+musicXmlLogs='truncated';const failedXml=await call('/api/export-musicxml',{method:'POST',data:{code:xmlSource,title:'Fail'}});assert.equal(failedXml.status,422);assert.equal(paid,paidBeforeXml);
+assert.equal((await call('/api/export-musicxml',{method:'POST',data:{code:'\\score {{c4}} \\score {{d4}}'}})).status,422);
+console.log('PASS: shipped MusicXML API: exact compiler tree, downloadable XML MIME/filename, source/workspace/MIDI unchanged, diagnosis, no AI charges, explicit failure for missing/truncated structure.');
+
+// Refactoring the common MIDI reader must not discard a valid score when only
+// the renderer's MIDI result is malformed.
+rendererMidi=btoa('invalid-midi');musicXmlLogs='';rendererLogs='';expressionError=false;compileError=false;
+const invalidMidi=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Malformed MIDI',runId:'abcde000000000099'}});
+assert(!invalidMidi.url);assert(invalidMidi.pages.length);assert(invalidMidi.warning.includes('nicht lesbar'));
+rendererMidi=null;
+console.log('PASS: shared MIDI reader preserves visible score and warning on malformed MIDI.');

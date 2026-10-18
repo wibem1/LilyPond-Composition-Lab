@@ -1,5 +1,6 @@
 import {arpeggioPrelude} from './arpeggio-playback.mjs';
 import {trillPrelude} from './trill-playback.mjs';
+import {voiceArticulationPrelude} from './voice-articulation.mjs';
 // Render the untouched score and a separate, articulated MIDI-only score.
 // Mask strings/comments/Scheme so braces and commands in them are never edited.
 export function mask(source){
@@ -21,6 +22,7 @@ const prelude=String.raw`
 #(set! ac:normalFactor '(15 . 16))
 ${trillPrelude}
 ${arpeggioPrelude}
+${voiceArticulationPrelude}
 #(define (lab-expression-words value)
    (cond ((string? value) (list value))
          ((pair? value) (append-map lab-expression-words value))
@@ -62,7 +64,7 @@ export function expressionPlayback(source){
   let music=source.slice(open+1,end),printed=source.slice(match.index,end+1);
   for(const r of [...removals].reverse())music=music.slice(0,r.start-open-1)+music.slice(r.end-open-1);
   for(const r of [...removals].reverse())if(r.type==='midi')printed=printed.slice(0,r.start-match.index)+printed.slice(r.end-match.index);
-  edits.push({start:match.index,end:end+1,text:printed+'\n\\score {\n  \\labArpeggioPlayback \\articulate \\labTrillSetup \\labExpressionText \\unfoldRepeats {\n'+music+'\n  }\n'+midi.join('\n')+'\n}\n'});scores++;
+  edits.push({start:match.index,end:end+1,text:printed+'\n\\score {\n  \\labArpeggioPlayback \\labArticulateVoices \\labTrillSetup \\labExpressionText \\unfoldRepeats {\n'+music+'\n  }\n'+midi.join('\n')+'\n}\n'});scores++;
  }
  if(!scores)return {code:source,mode:'basic',scores:0};
  let code=source;for(const e of edits.reverse())code=code.slice(0,e.start)+e.text+code.slice(e.end);
