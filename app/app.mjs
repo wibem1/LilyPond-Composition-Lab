@@ -1,4 +1,3 @@
-import {sourceStatus} from '/composition-recovery.mjs';
 import {workflowChoice,cleanGuidelines,previewMessages,supportsXhigh} from '/composition-workflow.mjs';
 import {compositionCosts,costLabel} from '/composition-costs.mjs';
 import {SoundFontPlayer} from '/soundfont-player.mjs';
@@ -14,7 +13,7 @@ async function api(path,data,method){try{const r=await fetch(path,{method:method
 function payload(){return {...state,id:state.historyId,title:$('title').value,task:$('task').value,system:$('system').value,techout:$('code').value,draft:$('draft').value,workflow:$('workflow').value,format:'lilypond',tokens1:$('tokens').value,compositionReasoning:$('compositionReasoning').value,compositionModel:$('model').value||modelChoice,realisationModel:'',compiler:$('compiler').textContent};}
 function queueSave(){if(restoring)return;clearTimeout(timer);timer=setTimeout(()=>persist(),550);}
 function persist(){if(restoring||runClient.pendingRunId)return Promise.resolve();const workspace=payload();saveChain=saveChain.catch(()=>{}).then(()=>api('/api/workspace',{workspace})).then(async()=>{if(workspace.workflow==='concept'&&workspace.draft&&workspace.historyId)await api('/api/history',workspace);$('memoryStatus').textContent='Letzter Arbeitsstand gespeichert.'}).catch(e=>{$('memoryStatus').textContent='Arbeitsstand konnte nicht gespeichert werden: '+e.message;throw e});return saveChain;}
-function setBusy(v){busy=v;for(const id of ['compose','continueComposition','completeComposition','code','title','correctErrors','correctionNotes','compile','new','import','openHistory','deleteHistory','saveHistory','saveMusicXml','backupHistory','restoreHistory','workflow','provider','model','compositionReasoning','task','system','tokens','draft'])$(id).disabled=v;renderWorkflow();}
+function setBusy(v){busy=v;for(const id of ['compose','continueComposition','reviseComposition','code','title','correctComposition','compile','new','import','openHistory','deleteHistory','saveHistory','saveMusicXml','backupHistory','restoreHistory','workflow','provider','model','compositionReasoning','task','system','tokens','draft'])$(id).disabled=v;renderWorkflow();}
 function message(s){$('status').textContent=s;}
 const runClient=new RunClient({onprogress:message});
 const fontCache=new SoundFontCache({onwarning:e=>runClient.record(state.runId,'soundfont_cache_error',e.message)});
@@ -67,23 +66,22 @@ function renderWorkflow(){
 }
 function renderResults(){
  renderWorkflow();
- const fragment=sourceStatus($('code').value);$('completeComposition').hidden=!(fragment.canContinue&&(!fragment.complete||state.recovery?.incomplete));$('completeComposition').disabled=busy;
 
  $('score').replaceChildren();for(const p of state.pages||[]){const img=document.createElement('img');img.src=p.url;img.alt=p.label;img.loading='lazy';$('score').append(img)}
  $('scoreStatus').textContent=state.pages?.length?state.pages.length+' Notenseite(n).':'Noch kein aktuelles Notenbild.';
  $('downloads').replaceChildren();for(const d of state.downloads||[]){const a=document.createElement('a');a.href=d.url;a.textContent=d.label+' speichern';if(d.url===state.midiUrl)a.onclick=e=>{e.preventDefault();$('saveMidi').onclick();};$('downloads').append(a)}
  for(const id of ['play','pause','stop','saveMidi','position'])$(id).disabled=!state.midiUrl||(id==='play'&&loading);
- $('correctErrors').disabled=busy||!$('code').value.trim();$('saveMusicXml').disabled=busy||loading||!$('code').value.trim();
+ for(const id of ['reviseComposition','correctComposition'])$(id).disabled=busy||!$('code').value.trim();$('saveMusicXml').disabled=busy||loading||!$('code').value.trim();
  $('diagnosis').disabled=!state.runId;$('compiler').textContent=state.compiler||'Noch nicht kompiliert.';$('scoreIssue').textContent=state.compilerNotice||'';$('scoreIssue').hidden=!$('scoreIssue').textContent;
  $('playerTitle').textContent=state.midiUrl?$('title').value:'Noch keine aktuelle MIDI-Datei geladen.';
  $('costs').textContent='Erfasste KI-Kosten dieser Komposition: '+costLabel(state.costs)+(state.ideaStage?' · Klangvorstellung $'+Number(state.ideaStage.cost||0).toFixed(6):'');
 }
-function apply(e){if(Number(e.tokens1)===8000)e={...e,tokens1:64000};if(e.system!==undefined)e={...e,system:currentSystem(e.system)};player.stop();ready=false;state={...state,...e,...{workflow:workflowChoice(e.workflow),ideaStage:e.ideaStage||null,compositionStage:e.compositionStage||null,correctionStages:e.correctionStages||[]},compilerNotice:e.compilerNotice||((e.compiler||'').split('\n').filter(line=>/Compilerfehler|fehlgeschlagen|Compilerwarnungen|warning:|error:|bar check failed|unvollständig|abgeschnitten/.test(line)).join('\n')),correctionDiagnostics:e.correctionDiagnostics||e.compiler||'',costs:compositionCosts(e.costs),historyId:e.historyId||e.id||'',midiUrl:e.midiUrl||'',midiTimingPolicy:e.midiTimingPolicy||'',pages:e.pages||[],downloads:e.downloads||[]};$('draft').value=e.draft||'';$('workflow').value=workflowChoice(e.workflow);for(const [id,key] of [['task','task'],['title','title'],['code','techout'],['system','system'],['tokens','tokens1'],['compositionReasoning','compositionReasoning']])if(e[key]!==undefined)$(id).value=e[key];modelChoice=e.compositionModel||modelChoice;selectModel(modelChoice);renderResults();}
+function apply(e){if(Number(e.tokens1)===8000)e={...e,tokens1:64000};if(e.system!==undefined)e={...e,system:currentSystem(e.system)};player.stop();ready=false;state={...state,...e,...{workflow:workflowChoice(e.workflow),ideaStage:e.ideaStage||null,compositionStage:e.compositionStage||null,correctionStages:e.correctionStages||[],recoveryStages:e.recoveryStages||[],recovery:e.recovery||null,revision:e.revision||null},compilerNotice:e.compilerNotice||((e.compiler||'').split('\n').filter(line=>/Compilerfehler|fehlgeschlagen|Compilerwarnungen|warning:|error:|bar check failed|unvollständig|abgeschnitten/.test(line)).join('\n')),correctionDiagnostics:e.correctionDiagnostics||e.compiler||'',costs:compositionCosts(e.costs),historyId:e.historyId||e.id||'',midiUrl:e.midiUrl||'',midiTimingPolicy:e.midiTimingPolicy||'',pages:e.pages||[],downloads:e.downloads||[]};$('draft').value=e.draft||'';$('workflow').value=workflowChoice(e.workflow);for(const [id,key] of [['task','task'],['title','title'],['code','techout'],['system','system'],['tokens','tokens1'],['compositionReasoning','compositionReasoning']])if(e[key]!==undefined)$(id).value=e[key];modelChoice=e.compositionModel||modelChoice;selectModel(modelChoice);renderResults();}
 function selectModel(id){const m=catalog.find(x=>x.id===id);if(!m)return;$('provider').value=m.provider;populateModels(id);}
 function populateModels(preferred=''){const list=catalog.filter(x=>x.provider===$('provider').value);$('model').replaceChildren(...list.map(m=>new Option(m.name||m.id,m.id)));if(list.some(m=>m.id===preferred))$('model').value=preferred;modelChoice=$('model').value;prices();}
 function prices(){const m=catalog.find(x=>x.id===$('model').value);const extra=Array.from($('compositionReasoning').options).find(o=>o.value==='xhigh');if(extra)extra.disabled=!supportsXhigh($('model').value);$('reasoningSupport').textContent=m&&Array.isArray(m.supported_parameters)&&!m.supported_parameters.some(p=>p==='reasoning'||p==='reasoning_effort')?'Dieses Modell meldet keine Unterstützung für die Denksteuerung. Die angeforderte Stufe kann ohne Wirkung bleiben.':'';$('price').textContent=m?`Je 1 Mio. Tokens: Eingabe $${(m.prompt*1e6).toFixed(2)} · Ausgabe $${(m.completion*1e6).toFixed(2)}.`:'';}
 async function models(){try{const d=await api('/api/models');catalog=d.models;const providers=[...new Set(catalog.map(m=>m.provider))].sort();$('provider').replaceChildren(...providers.map(x=>new Option(x,x)));selectModel(modelChoice||catalog.find(x=>x.id.startsWith('anthropic/claude-sonnet-'))?.id||catalog[0]?.id);if(!$('model').value)populateModels();$('catalogStatus').textContent=catalog.length+' Textmodelle verfügbar.'}catch(e){$('catalogStatus').textContent='Modellkatalog: '+e.message;}}
-async function refreshHistory(){const d=await api('/api/history');$('history').replaceChildren(...d.entries.map(e=>new Option(e.title+(e.workflow==='concept'?(e.hasRealisation?' · Mit Klangvorstellung':' · Klangvorstellung – fortsetzbar'):'')+(e.compositionReasoning?' · '+qualityLabel(e.compositionReasoning):'')+' · '+new Date(e.updatedAt).toLocaleString('de-DE')+' · '+costLabel(e.costs),e.id)));if(state.historyId)$('history').value=state.historyId;}
+async function refreshHistory(){const d=await api('/api/history');$('history').replaceChildren(...d.entries.map(e=>new Option(e.title+(e.revisionMode==='revise'?' · Überarbeitet':e.revisionMode==='correct'?' · Korrigiert':'')+(e.workflow==='concept'?(e.hasRealisation?' · Mit Klangvorstellung':' · Klangvorstellung – fortsetzbar'):'')+(e.compositionReasoning?' · '+qualityLabel(e.compositionReasoning):'')+' · '+new Date(e.updatedAt).toLocaleString('de-DE')+' · '+costLabel(e.costs),e.id)));if(state.historyId)$('history').value=state.historyId;}
 async function saveHistory(){if(!$('code').value.trim()&&!$('draft').value.trim())return;const d=await api('/api/history',payload());state.historyId=d.entry.id;await refreshHistory();await persist();}
 async function compiledResult(d){ready=false;player.stop();state.midiUrl=d.url||'';state.midiTimingPolicy=d.midiTimingPolicy||'';state.pages=d.pages||[];state.correctionDiagnostics=[d.error,d.warning,d.logs].filter(Boolean).join('\n');state.compilerNotice=[d.error,d.warning].filter(Boolean).join('\n');$('scoreIssue').textContent=state.compilerNotice;$('scoreIssue').hidden=!$('scoreIssue').textContent;state.compiler=[d.error,d.warning,d.repair,d.expressionPlayback?.mode==='articulate'?'Erweiterte Ausdruckswiedergabe aktiv (Bögen, Artikulation, erkannte Tempoangaben).':'',d.rangeCheck?.status==='passed'?'Tonumfangprüfung bestanden (klingende MIDI-Töne).':'',d.logs].filter(Boolean).join('\n')||'Kompilierung erfolgreich.';state.downloads=state.downloads.filter(x=>x.url.endsWith('.ly'));if(d.url)state.downloads.push({label:'MIDI-Datei',url:d.url});renderResults();}
 function requestInputs(){return {key:$('key').value,model:$('model').value,task:$('task').value,system:$('system').value,maxTokens:Number($('tokens').value),compositionReasoning:$('compositionReasoning').value,title:$('title').value};}
@@ -110,7 +108,7 @@ async function compose(continuing=false){
  if(busy)return;if(!$('model').value)return message('Bitte zuerst ein Modell auswählen.');
  const task=$('task').value;if(!task.trim())return message('Bitte einen Auftrag eingeben.');
  if(continuing&&(!state.ideaStage||!state.historyId||state.compositionStage))return message('Bitte eine gespeicherte Klangvorstellung öffnen.');
- await persist();setBusy(true);state.runId=crypto.randomUUID().replaceAll('-','');if(!continuing){state.recovery=null;state.recoveryStages=[];state.correctionStages=[];state.workflow='direct';state.ideaStage=null;state.compositionStage=null;state.historyId='';state.costs={composition:0,realisation:0};$('draft').value='';}renderResults();message('Compiler wird vor dem KI-Aufruf geprüft …');
+ await persist();setBusy(true);state.runId=crypto.randomUUID().replaceAll('-','');if(!continuing){state.revision=null;state.recovery=null;state.recoveryStages=[];state.correctionStages=[];state.workflow='direct';state.ideaStage=null;state.compositionStage=null;state.historyId='';state.costs={composition:0,realisation:0};$('draft').value='';}renderResults();message('Compiler wird vor dem KI-Aufruf geprüft …');
  try{
   await persist();
   const d=await runClient.start({...requestInputs(),runId:state.runId,workflow:continuing?'concept':'direct',historyId:state.historyId,draft:continuing?$('draft').value:''});
@@ -123,22 +121,22 @@ async function compose(continuing=false){
   else if(d.compiled.rangeCheck?.status==='passed')message($('status').textContent+'\nTonumfangprüfung bestanden.');
  }catch(e){message('Fehler: '+e.message);if(e.details&&/Schlüssel|Anmeldung/.test(e.message)){$('connectionDetails').open=true;$('connection').scrollIntoView({behavior:'smooth'});$('keyStatus').textContent=e.message;}if(!runClient.pendingRunId)queueSave()}finally{setBusy(false);renderResults()}
 };
-$('completeComposition').onclick=async()=>{
+async function reviseComposition(operation){
  if(busy)return;
- setBusy(true);player.stop();ready=false;message('Fehlender Notentext wird ergänzt. Original bleibt im Verlauf erhalten …');
- try{await saveHistory();const d=await runClient.start({...requestInputs(),operation:'complete',historyId:state.historyId,code:$('code').value,runId:crypto.randomUUID().replaceAll('-','')});await acceptRunResult(d);message(d.compiled.incomplete?d.compiled.error:'Komposition vervollständigt und kompiliert. Vorhandener Notentext unverändert; Original im Verlauf erhalten.');}
- catch(e){message('Vervollständigung: '+e.message);}
+ const code=$('code').value;if(!code.trim())return message('Bitte zuerst eine Komposition erzeugen oder öffnen.');
+ if(!$('model').value)return message('Bitte zuerst ein Modell auswählen.');
+ if(operation==='revise'&&!$('task').value.trim())return message('Bitte den Änderungswunsch in das Feld „Kompositionsauftrag“ schreiben.');
+ setBusy(true);player.stop();ready=false;message(operation==='correct'?'Die KI prüft und korrigiert die gesamte Komposition …':'Die KI überarbeitet die Komposition nach deinem Auftrag …');
+ try{
+  await saveHistory();
+  const d=await runClient.start({...requestInputs(),operation,historyId:state.historyId,code,diagnostics:state.compilerNotice||'',runId:crypto.randomUUID().replaceAll('-','')});
+  await acceptRunResult(d);
+  message(d.compiled.incomplete?d.compiled.error:d.compiled.error?'Neue Fassung gespeichert. Compilerfehler: '+d.compiled.error:d.compiled.warning?'Neue Fassung gespeichert. Hinweise: '+d.compiled.warning:'Neue Fassung gespeichert und geprüft. Das Original bleibt im Verlauf erhalten.');
+ }catch(e){message('Bearbeitung fehlgeschlagen: '+e.message);}
  finally{setBusy(false);renderResults();}
-};
-$('correctErrors').onclick=async()=>{
- if(busy)return;
- const notes=[$('correctionNotes').value.trim(),state.correctionDiagnostics||state.compiler].filter(Boolean).join('\n\n');
- if(!notes)return message('Bitte zuerst kompilieren oder einen konkreten Korrekturhinweis eingeben.');
- setBusy(true);player.stop();ready=false;message('Gezielte KI-Korrektur wird ausgeführt …');
- try{await saveHistory();const d=await runClient.start({...requestInputs(),operation:'repair',historyId:state.historyId,code:$('code').value,diagnostics:notes,runId:crypto.randomUUID().replaceAll('-','')});await acceptRunResult(d);message(d.compiled.error?'Korrektur gespeichert, aber weiterhin fehlerhaft: '+d.compiled.error:d.compiled.warning?'Korrektur gespeichert. Weitere Hinweise: '+d.compiled.warning:'Korrektur gespeichert und erneut kompiliert. Original im Verlauf erhalten.');}
- catch(e){message('Korrektur fehlgeschlagen: '+e.message);}
- finally{setBusy(false);renderResults();}
-};
+}
+$('reviseComposition').onclick=()=>reviseComposition('revise');
+$('correctComposition').onclick=()=>reviseComposition('correct');
 $('saveMusicXml').onclick=async()=>{
  if(busy||loading)return;
  const code=$('code').value;if(!code.trim())return message('Bitte LilyPond-Code eingeben oder öffnen.');
@@ -156,7 +154,7 @@ $('saveMusicXml').onclick=async()=>{
 $('compile').onclick=async()=>{if(busy)return;const code=$('code').value;if(!code.trim())return message('Bitte LilyPond-Code eingeben oder öffnen.');setBusy(true);state.runId||=crypto.randomUUID().replaceAll('-','');message('LilyPond wird kompiliert …');try{const d=await api('/api/compile-lilypond',{code,title:$('title').value,task:$('task').value,runId:state.runId});if(d.code&&d.code!==$('code').value){$('code').value=d.code;state.downloads=[];}await compiledResult(d);await saveHistory();message('Kompiliert · '+(d.pages||[]).length+' Seite(n).'+(d.repair?'\n'+d.repair:d.warning?'\n'+d.warning:d.rangeCheck?.status==='passed'?'\nTonumfangprüfung bestanden.':''))}catch(e){state.compiler=[e.message,e.details?.logs].filter(Boolean).join('\n');state.correctionDiagnostics=state.compiler;state.compilerNotice=e.message;invalidate();$('compiler').textContent=state.compiler;message('Compilerfehler: '+e.message);await saveHistory().catch(x=>{$('memoryStatus').textContent=x.message})}finally{setBusy(false);renderResults()}};
 $('sendHacklily').onclick=()=>{const code=$('code').value;if(!code.trim())return message('Bitte LilyPond-Code eingeben oder öffnen.');const a=document.createElement('a');a.href='https://www.hacklily.org/?src='+encodeURIComponent(code);a.target='_blank';a.rel='noopener noreferrer';a.click();};
 $('saveLy').onclick=()=>{const url=URL.createObjectURL(new Blob([$('code').value],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=($('title').value.replace(/[\\/:*?"<>|]/g,'_')||'Komposition')+'.ly';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};
-$('import').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>200000)return message('Datei zu groß (max. 200 KB).');state.historyId='';state.runId='';state.recovery=null;state.recoveryStages=[];state.correctionStages=[];state.recovery=null;state.recoveryStages=[];state.correctionStages=[];state.workflow='direct';state.ideaStage=null;state.compositionStage=null;$('draft').value='';$('workflow').value='direct';state.costs={composition:0,realisation:0};$('code').value=await f.text();$('title').value=$('code').value.match(/\btitle\s*=\s*"([^"\n]+)"/)?.[1]||f.name.replace(/\.ly$/i,'');invalidate();await saveHistory().catch(x=>message(x.message));e.target.value='';};
+$('import').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>200000)return message('Datei zu groß (max. 200 KB).');state.historyId='';state.runId='';state.revision=null;state.recovery=null;state.recoveryStages=[];state.correctionStages=[];state.revision=null;state.recovery=null;state.recoveryStages=[];state.correctionStages=[];state.workflow='direct';state.ideaStage=null;state.compositionStage=null;$('draft').value='';$('workflow').value='direct';state.costs={composition:0,realisation:0};$('code').value=await f.text();$('title').value=$('code').value.match(/\btitle\s*=\s*"([^"\n]+)"/)?.[1]||f.name.replace(/\.ly$/i,'');invalidate();await saveHistory().catch(x=>message(x.message));e.target.value='';};
 $('new').onclick=()=>{player.stop();ready=false;state={workflow:$('workflow').value,ideaStage:null,compositionStage:null,historyId:'',runId:'',costs:{composition:0,realisation:0},downloads:[],midiUrl:'',pages:[],compiler:''};$('code').value='';$('draft').value='';$('title').value='Unbenannte Komposition';renderResults();queueSave();message('Neue Komposition bereit.');};
 $('saveHistory').onclick=()=>saveHistory().catch(e=>{$('memoryStatus').textContent=e.message});
 $('openHistory').onclick=async()=>{try{if(!$('history').value)return;apply((await api('/api/history/'+$('history').value)).entry);await persist()}catch(e){$('memoryStatus').textContent=e.message}};
@@ -209,7 +207,7 @@ window.addEventListener('pagehide',()=>{if(!restoring&&!runClient.pendingRunId)n
 async function boot(){fontRestore=restoreSoundFont();renderResults();try{const d=await api('/api/workspace');if(d.workspace)apply(d.workspace)}catch(e){$('memoryStatus').textContent='Letzter Arbeitsstand: '+e.message}restoring=false;await Promise.allSettled([models(),refreshHistory(),keyStatus()]);if(runClient.pendingRunId)await recoverPending();}
 async function recoverPending(){
  if(busy||!runClient.pendingRunId)return;setBusy(true);state.runId=runClient.pendingRunId;runClient.record(state.runId,'page_restored');message('Vorheriger Auftrag wird wiederhergestellt …');
- try{await acceptRunResult(await runClient.recover());message(state.recovery?.incomplete?'Unvollständigen Notentext wiederhergestellt. Mit „Komposition vervollständigen“ fortsetzen.':'Ergebnis wiederhergestellt.');}catch(e){message(e.message);}finally{setBusy(false);renderResults();}
+ try{await acceptRunResult(await runClient.recover());message(state.recovery?.incomplete?'Unvollständigen Notentext wiederhergestellt. Mit „Korrigiere die Komposition“ bearbeiten.':'Ergebnis wiederhergestellt.');}catch(e){message(e.message);}finally{setBusy(false);renderResults();}
 }
 window.addEventListener('offline',()=>runClient.record(runClient.pendingRunId||state.runId,'offline','Browser meldet keine Internetverbindung.'));
 window.addEventListener('online',()=>{runClient.record(runClient.pendingRunId||state.runId,'online');runClient.flush();if(!busy)recoverPending();});

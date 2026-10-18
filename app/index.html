@@ -60,6 +60,7 @@
         </details>
       </details>
       <div class="actions"><button id="compose">Stück komponieren</button><button id="new" class="secondary">Neue Komposition</button></div>
+      <div class="actions"><button id="reviseComposition" class="secondary" title="Aktuellen Notentext mit dem Änderungswunsch aus dem Kompositionsauftrag an das gewählte Modell schicken.">Komposition überarbeiten</button><button id="correctComposition" class="secondary" title="Die KI prüft und verbessert das geöffnete Stück selbstständig.">Korrigiere die Komposition</button></div>
       <div id="conceptPanel" hidden>
         <label for="draft">Kompositionsidee · bearbeitbar</label>
         <textarea id="draft" rows="6"></textarea>
@@ -84,15 +85,7 @@
       </div>
       <p class="help">Notensatz und MusicXML-Export verwenden den Online-Compiler von Hacklily.</p>
       <p id="scoreIssue" class="status" role="status" hidden></p>
-      <button id="completeComposition" class="secondary" hidden title="Zusätzlicher KI-Aufruf mit dem gewählten Modell; Original bleibt erhalten.">Komposition vervollständigen</button>
-      <details>
-        <summary>Korrektur und Protokoll</summary>
-        <label for="correctionNotes">Korrekturhinweis</label>
-        <textarea id="correctionNotes" rows="2" placeholder="Zum Beispiel: Die Stimmen sollen nach 24 Takten gemeinsam enden."></textarea>
-        <button id="correctErrors" class="secondary">Fehler korrigieren</button>
-        <p class="help">Zusätzlicher KI-Aufruf mit dem gewählten Modell. Das Original bleibt im Verlauf erhalten.</p>
-        <details><summary>Compilerprotokoll</summary><pre id="compiler">Noch nicht kompiliert.</pre></details>
-      </details>
+      <details><summary>Compilerprotokoll</summary><pre id="compiler">Noch nicht kompiliert.</pre></details>
     </section>
   </div>
   <div class="output-column">

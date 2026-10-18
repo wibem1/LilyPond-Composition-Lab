@@ -1,13 +1,15 @@
-# LilyPond Composition Lab · V1.1.0
+# LilyPond Composition Lab · V1.2.0
 
 Private WebApp für Computer, iPad und Android. Auftrag → KI → editierbarer LilyPond-Notentext → Partitur, Wiedergabe und Export. Veröffentlichungsdatum: 18.10.2026.
 
 ## Arbeiten mit der App
 
 - **Komponieren:** Modell aus dem aktuellen OpenRouter-Katalog wählen, Auftrag eingeben und komponieren. Denkaufwand, eigene Vorgaben und Tokenbudget bleiben einstellbar.
-- **Abgebrochene Komposition:** Empfangener Notentext wird während der Übertragung gesichert. Nach einem Verbindungsabbruch wird derselbe Auftrag abgeholt. „Komposition vervollständigen“ ergänzt mit dem gewählten Modell ausschließlich das fehlende Ende als neue Fassung. Vorhandene Zeichen bleiben unverändert; Modell, Kosten und Original bleiben nachvollziehbar.
+- **Abgebrochene Komposition:** Empfangener Notentext wird während der Übertragung gesichert. Nach einem Verbindungsabbruch wird derselbe Auftrag abgeholt. Fragmente können mit den allgemeinen Bearbeitungsfunktionen erneut an die KI geschickt werden; das Original bleibt als eigene Fassung erhalten.
+- **Komposition überarbeiten:** Den Änderungswunsch in das vorhandene Feld „Kompositionsauftrag“ schreiben. Der Button schickt ihn zusammen mit dem aktuellen Notentext an das gewählte Modell.
+- **Korrigiere die Komposition:** Die KI prüft das ganze Stück selbstständig auf technische und musikalische Schwächen. Der Text im Auftragsfeld wird dabei nicht als Änderungswunsch verwendet. Kein Chat, kein zusätzliches Eingabefeld. Beide Bearbeitungen speichern eine neue Fassung mit Modell und Kosten; das Original bleibt erhalten.
 - **Optional mit Idee:** Eine kurze Klangvorstellung zuerst prüfen und bearbeiten, anschließend zum vollständigen Stück ausarbeiten lassen.
-- **Notentext:** LilyPond öffnen, bearbeiten, neu kompilieren oder an Hacklily übergeben. Compilerhinweise bleiben sichtbar; eine gezielte KI-Korrektur erhält das Original im Verlauf.
+- **Notentext:** LilyPond öffnen, bearbeiten, neu kompilieren oder an Hacklily übergeben. Compilerhinweise bleiben sichtbar; die allgemeinen KI-Bearbeitungen erhalten das Original im Verlauf.
 - **Wiedergabe:** SoundFont-Player mit Pause, Position und Lautstärke. Eigene SF2-Dateien werden gespeichert und lokal zwischengespeichert. Gespeicherte MIDI-Dateien aus alten Erzeugungswegen werden vor dem Abspielen aktualisiert.
 - **Export:** LilyPond, MIDI und MusicXML. Der MusicXML-Export verwendet die vom Compiler aufgelöste Notenstruktur, ohne KI-Aufruf; Grenzen und nicht übertragene Angaben werden gemeldet.
 - **Verlauf:** Kompositionen, Ideen, Modelle, Kosten und Diagnosen. Sicherung und Wiederherstellung enthalten auch Notenseiten und MIDI; Schlüssel und SoundFonts sind ausgenommen.
@@ -41,6 +43,8 @@ npm run validate
 Die automatisierten Programme prüfen unter anderem direkte und zweistufige Komposition, Modelle und Kosten, gespeicherte Arbeitsstände, Fehlerbehandlung, Wiederherstellung, MIDI-Synchronität, SoundFonts sowie MusicXML. Zusätzliche echte Compiler- und Rückkonvertierungsprüfungen sind in [MusicXML-Export](docs/musicxml-export.md) beschrieben. Die Oberfläche ordnet breite Fenster in zwei Spalten und kleinere Fenster in einer Spalte an; alle Bedienelemente bleiben im Dokument vorhanden.
 
 Details zur Wiederherstellung und zu den Tests: [Wiederherstellung](docs/composition-recovery.md).
+
+Bedienung und Datenfluss der allgemeinen Bearbeitungen: [Überarbeiten und Korrigieren](docs/release-1.2.md).
 
 ## Dienste und Veröffentlichung
 

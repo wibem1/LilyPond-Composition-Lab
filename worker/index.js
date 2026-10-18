@@ -1,3 +1,4 @@
+import {revisionMessages} from '../src/composition-revision.mjs';
 import {sourceStatus,lilySource,continuationMessages,appendContinuation} from '../src/composition-recovery.mjs';
 import {readCompositionResponse} from '../src/provider-stream.mjs';
 import {scoreCompleteness} from '../src/score-completeness.mjs';
@@ -42,7 +43,7 @@ const historyId=v=>/^[a-f0-9]{16,40}$/.test(String(v||''))?v:null;
 function historyPublic(v){
   return {id:v.id,title:v.title||'Unbenannte Komposition',createdAt:v.createdAt,updatedAt:v.updatedAt,hasMidi:!!v.midiUrl,
     compositionModel:v.compositionModel||'',compositionReasoning:v.compositionReasoning||'',realisationModel:v.realisationModel||'',format:v.format||'',
-    workflow:v.workflow||'direct',hasDraft:!!v.draft,hasRealisation:!!v.techout,costs:compositionCosts(v.costs)};
+    revisionMode:['revise','correct'].includes(v.revision?.mode)?v.revision.mode:'',workflow:v.workflow||'direct',hasDraft:!!v.draft,hasRealisation:!!v.techout,costs:compositionCosts(v.costs)};
 }
 async function upstream(url,init,timeout=185000){const ac=new AbortController();const t=setTimeout(()=>ac.abort(),timeout);try{return await fetch(url,{...init,signal:ac.signal});}finally{clearTimeout(t);}}
 function contentType(file){if(file.endsWith('.musicxml'))return 'application/vnd.recordare.musicxml+xml; charset=utf-8';if(file.endsWith('.svg'))return 'image/svg+xml';if(file.endsWith('.mid'))return 'audio/midi';if(file.endsWith('.abc')||file.endsWith('.ly')||file.endsWith('.csv')||file.endsWith('.txt'))return 'text/plain; charset=utf-8';return 'application/octet-stream';}
@@ -397,12 +398,22 @@ async function restorePartial(env,runId){
  try{code=input.operation==='complete'?appendContinuation(code,answer):lilySource(answer);}catch{}
  if(!code)return null;
  const compiled={incomplete:true,error:'Serververarbeitung unterbrochen. Empfangener Notentext gesichert; Vervollständigung ist möglich.'};
+ const revisionOperation=['complete','repair','revise','correct'].includes(input.operation);
  const costs={composition:Number(original?.costs?.composition)||Number(input.ideaStage?.cost)||0,realisation:Number(original?.costs?.realisation)||0};
- costs[input.operation==='complete'?'realisation':'composition']+=Number(response.usage?.cost)||0;
- const entry={...original,...input,compositionStage:input.operation==='complete'?original?.compositionStage:stageRecord({runId,model:input.model,actualModel:response.model,answer,usage:response.usage,finishReason:'interrupted',cost:response.usage?.cost}),id:runId,runId,techout:code,compositionModel:input.model,compositionReasoning:input.compositionReasoning,format:'lilypond',costs,downloads:[],pages:[],midiUrl:'',compiler:compiled.error,recovery:{incomplete:true,originalHistoryId:input.originalHistoryId||runId,prefixLength:input.code?.length||0}};
+ costs[revisionOperation?'realisation':'composition']+=Number(response.usage?.cost)||0;
+ const recoveredStage=stageRecord({runId,model:input.model,actualModel:response.model,quality:input.compositionReasoning,task:input.operation==='correct'?'Selbstständige Korrektur':input.task,answer,usage:response.usage,finishReason:'interrupted',cost:response.usage?.cost});
+ const entry={...original,...input,...(['revise','correct'].includes(input.operation)?{revision:{mode:input.operation,originalHistoryId:input.originalHistoryId,instructions:input.operation==='revise'?input.task:''},correctionStages:[...(original?.correctionStages||[]),recoveredStage]}:{}),compositionStage:revisionOperation?original?.compositionStage:stageRecord({runId,model:input.model,actualModel:response.model,answer,usage:response.usage,finishReason:'interrupted',cost:response.usage?.cost}),id:runId,runId,techout:code,compositionModel:input.model,compositionReasoning:input.compositionReasoning,format:'lilypond',costs,downloads:[],pages:[],midiUrl:'',compiler:compiled.error,recovery:{incomplete:true,originalHistoryId:input.originalHistoryId||runId,prefixLength:input.code?.length||0}};
  entry.downloads=[{label:'Unvollständige LilyPond-Datei',url:await saveFile(env,entry.title,'ly',code)}];
  await saveHistory(env,entry);
  return {...entry,historyId:runId,answer:code,rawAnswer:answer,compiled};
+}
+async function verifyScoreStructure(code,compiled){
+ if(compiled.error)return;
+ try{
+  const captured=await rpc('render',{backend:'svg',src:musicXmlCapture(code),version:'stable'});
+  if(captured.err||compilerDiagnostics(captured.logs).status==='error')throw Error('Musikstruktur konnte nicht fehlerfrei geprüft werden.');
+  compiled.completeness=scoreCompleteness(capturedMusic(captured.logs));
+ }catch(e){compiled.incomplete=true;compiled.error='Musikstruktur nicht bestätigt: '+e.message;}
 }
 async function runCompletion(b,env,runId,started){
  let key='',entry=null,answer='',usage=null,finish='interrupted',actualModel='',cost=0;
@@ -433,13 +444,7 @@ async function runCompletion(b,env,runId,started){
   await saveHistory(env,entry);
   const status=sourceStatus(entry.techout,finish);
   const compiled=status.complete?await compileLilyMidi(env,entry.techout,entry.title,runId,entry.task):{incomplete:true,error:status.reason+'. Fortsetzung gesichert; erneut vervollständigen.'};
-  if(status.complete&&!compiled.error){
-   try{
-    const captured=await rpc('render',{backend:'svg',src:musicXmlCapture(entry.techout),version:'stable'});
-    if(captured.err||compilerDiagnostics(captured.logs).status==='error')throw Error('Musikstruktur konnte nicht fehlerfrei geprüft werden.');
-    compiled.completeness=scoreCompleteness(capturedMusic(captured.logs));
-   }catch(e){compiled.incomplete=true;compiled.error='Vervollständigung nicht bestätigt: '+e.message;}
-  }
+  if(status.complete)await verifyScoreStructure(entry.techout,compiled);
   // Render ottavas without rewriting the protected source.
   delete compiled.code;
   if(compiled.error||!compiled.url||compiled.diagnostics?.status==='warning'){
@@ -484,46 +489,50 @@ async function runConcept(b,env,runId,started){
 }
 
 async function runCorrection(b,env,runId,started){
- let key='';
+ let key='';const operation=b.operation;
  try{
   const code=clean(b.code),model=clean(b.model).trim(),id=historyId(b.historyId);
   if(!code.trim()||code.length>200000)throw Error('Bitte einen gültigen LilyPond-Code öffnen.');
   if(!model.includes('/'))throw Error('Bitte ein Modell auswählen.');
   const original=id?await getJson(env,'history/'+id+'.json'):null;
   if(!original)throw Error('Bitte das Stück zuerst im Verlauf speichern.');
+  if(operation!=='repair'&&code!==original.techout)throw keyInputError('Der Notentext wurde geändert. Bitte zuerst speichern und erneut bearbeiten.');
+  if(operation==='revise'&&!clean(b.task).trim())throw keyInputError('Bitte den Änderungswunsch in das Feld „Kompositionsauftrag“ schreiben.');
   key=normalizeKey(b.key||await storedKey(env));await checkKey(key);
   try{await rendererReady()}catch(e){return json({error:e.message+' Keine KI wurde aufgerufen.',runId},412)}
   const system=clean(b.system)||DEFAULT_SYSTEM,task=clean(b.task),quality=qualityChoice(b.compositionReasoning);
-  const notes=clean(b.diagnostics).trim();if(!notes)throw Error('Bitte Compilerfehler oder einen konkreten Korrekturhinweis angeben.');
-  const messages=correctionMessages(task,system,code,notes),max_tokens=Math.min(64000,Math.max(500,Number(b.maxTokens)||64000)),reasoning=reasoningFor(quality,model);
-  await log(env,'anfrage',runId,{stage:'realisation',operation:'repair',model,messages,max_tokens,originalHistoryId:id,source:code,reasoning_requested:reasoning||'provider_default'});
+  const notes=clean(b.diagnostics).trim();if(operation==='repair'&&!notes)throw Error('Bitte Compilerfehler oder einen konkreten Korrekturhinweis angeben.');
+  const messages=operation==='repair'?correctionMessages(task,system,code,notes):revisionMessages({mode:operation,system,code,instructions:task,diagnostics:notes});
+  const max_tokens=Math.min(64000,Math.max(500,Number(b.maxTokens)||64000)),reasoning=reasoningFor(quality,model);
+  await log(env,'anfrage',runId,{stage:'realisation',operation,model,messages,max_tokens,originalHistoryId:id,source:code,reasoning_requested:reasoning||'provider_default'});
   const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens,stream:true,usage:{include:true},...(reasoning?{reasoning}:{})})});rejectRedirect(r);
-  const response=await readCompositionResponse(r,{checkpoint:response=>putJson(env,'checkpoints/'+runId+'.json',{input:{operation:'repair',model,task,title:original.title,compositionReasoning:quality,originalHistoryId:id},response,updatedAt:new Date().toISOString()})});if(!r.ok)throw Error(response.error?.message||'OpenRouter HTTP '+r.status);
+  const response=await readCompositionResponse(r,{checkpoint:response=>putJson(env,'checkpoints/'+runId+'.json',{input:{operation,model,task,title:original.title,compositionReasoning:quality,originalHistoryId:id},response,updatedAt:new Date().toISOString()})});if(!r.ok)throw Error(response.error?.message||'OpenRouter HTTP '+r.status);
   let answer=response.choices?.[0]?.message?.content;if(Array.isArray(answer))answer=answer.filter(x=>x.type==='text').map(x=>x.text).join('\n');answer=typeof answer==='string'?answer:'';
   const usage=response.usage||null,finish=response.error?'error':response.choices?.[0]?.finish_reason||null,actualModel=clean(response.model)||model,cost=Number(usage?.cost)||0;
-  await log(env,'antwort',runId,{stage:'realisation',operation:'repair',model,actualModel,answer,usage,finish_reason:finish,durationMs:Date.now()-started});
-  const correctionStage=stageRecord({runId,model,actualModel,quality,task,system:messages[0].content,answer,usage,finishReason:finish,cost,durationMs:Date.now()-started});
+  await log(env,'antwort',runId,{stage:'realisation',operation,model,actualModel,answer,usage,finish_reason:finish,durationMs:Date.now()-started});
+  const correctionStage=stageRecord({runId,model,actualModel,quality,task:operation==='correct'?'Selbstständige Korrektur':task,system:messages[0].content,answer,usage,finishReason:finish,cost,durationMs:Date.now()-started});
   let corrected=answer.trim().replace(/^```(?:lilypond|ly)?\s*\n/i,'').replace(/\n```\s*$/,'').trim();
   if(sourceStatus(corrected,finish).complete)corrected=compositionAttribution(corrected,actualModel);
-  const base={...original,id:undefined,createdAt:undefined,updatedAt:undefined,task,system,runId,techout:corrected,compositionModel:model,actualCompositionModel:actualModel,compositionReasoning:quality,correctionStages:[...(original.correctionStages||[]),correctionStage],costs:{composition:Number(original.costs?.composition)||0,realisation:(Number(original.costs?.realisation)||0)+cost},downloads:[],pages:[],midiUrl:''};
+  const base={...original,revision:operation==='repair'?null:{mode:operation,originalHistoryId:id,instructions:operation==='revise'?task:''},recovery:null,id:undefined,createdAt:undefined,updatedAt:undefined,task,system,runId,techout:corrected,compositionModel:model,actualCompositionModel:actualModel,compositionReasoning:quality,correctionStages:[...(original.correctionStages||[]),correctionStage],costs:{composition:Number(original.costs?.composition)||0,realisation:(Number(original.costs?.realisation)||0)+cost},downloads:[],pages:[],midiUrl:''};
   const saved=await saveHistory(env,base);
   const downloads=corrected?[{label:'LilyPond',url:await saveFile(env,base.title,'ly',corrected)}]:[];
-  const compiled=!sourceStatus(corrected,finish).complete?{error:'Unvollständige KI-Korrektur: '+sourceStatus(corrected,finish).reason+'. Original im Verlauf erhalten.',incomplete:true}:corrected?await compileLilyMidi(env,corrected,compositionFilename(base.title),runId,task):{error:'Die KI lieferte keinen LilyPond-Code.'};
+  const compiled=!sourceStatus(corrected,finish).complete?{error:'Unvollständige KI-Korrektur: '+sourceStatus(corrected,finish).reason+'. Original im Verlauf erhalten.',incomplete:true}:corrected?await compileLilyMidi(env,corrected,compositionFilename(base.title),runId,operation==='correct'?'':task):{error:'Die KI lieferte keinen LilyPond-Code.'};
+  if(operation!=='repair'&&!compiled.incomplete)await verifyScoreStructure(corrected,compiled);
   if(compiled.incomplete)base.recovery={incomplete:true,originalHistoryId:id};
-  await log(env,'kompilierung',runId,{operation:'repair',source:corrected,...compiled});
+  await log(env,'kompilierung',runId,{operation,source:corrected,...compiled});
   if(compiled.code)corrected=compiled.code;
   if(compiled.code)downloads[0]={label:'LilyPond',url:await saveFile(env,base.title,'ly',corrected)};
   if(compiled.url)downloads.push({label:'MIDI-Datei',url:compiled.url});
   const entry={...base,id:saved.id,techout:corrected,downloads,pages:compiled.pages||[],midiUrl:compiled.url||'',midiTimingPolicy:compiled.midiTimingPolicy||'',compiler:[compiled.error,compiled.warning,compiled.logs].filter(Boolean).join('\n')};
   await saveHistory(env,entry);await putJson(env,'workspace/current.json',workspaceEntry({...entry,historyId:saved.id}));
-  return json({...entry,operation:'repair',historyId:saved.id,answer:corrected,rawAnswer:answer,compiled,usage,finish_reason:finish,durationMs:Date.now()-started});
- }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{operation:'repair',error});return json({error,runId},e.status===401?401:502)}
+  return json({...entry,operation,historyId:saved.id,answer:corrected,rawAnswer:answer,compiled,usage,finish_reason:finish,durationMs:Date.now()-started});
+ }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{operation,error});return json({error,runId},e.status===401?401:e.status===400?400:502)}
 }
 
 async function run(req,env){
  const b=await body(req),runId=safe(b.runId||randomUUID().replaceAll('-','')),started=Date.now();
  if(b.operation==='complete')return runCompletion(b,env,runId,started);
- if(b.operation==='repair')return runCorrection(b,env,runId,started);
+ if(['repair','revise','correct'].includes(b.operation))return runCorrection(b,env,runId,started);
  if(b.operation==='concept')return runConcept(b,env,runId,started);
  let key='',conceptEntry=null;
  try{
@@ -571,7 +580,7 @@ async function run(req,env){
   // Persist the composition before naming or compiling; raw answer stays in diagnosis.
   const saved=await saveHistory(env,base);
   if(!sourceStatus(code,finish).complete){
-   const compiled={error:'Unvollständige KI-Antwort: '+sourceStatus(code,finish).reason+'. Notentext gesichert. Mit „Komposition vervollständigen“ fortsetzen.',incomplete:true};
+   const compiled={error:'Unvollständige KI-Antwort: '+sourceStatus(code,finish).reason+'. Notentext gesichert. Mit „Korrigiere die Komposition“ bearbeiten.',incomplete:true};
    base.recovery={incomplete:true,originalHistoryId:saved.id};
    if(code)downloads.push({label:'Unvollständige LilyPond-Datei',url:await saveFile(env,title,'ly',code)});
    const entry={...base,id:saved.id,compiler:compiled.error,pages:[],midiUrl:''};

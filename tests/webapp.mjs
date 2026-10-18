@@ -35,7 +35,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('V1.1.0'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('V1.2.0'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -361,3 +361,22 @@ const invalidMidi=await value('/api/compile-lilypond',{method:'POST',data:{code:
 assert(!invalidMidi.url);assert(invalidMidi.pages.length);assert(invalidMidi.warning.includes('nicht lesbar'));
 rendererMidi=null;
 console.log('PASS: shared MIDI reader preserves visible score and warning on malformed MIDI.');
+
+// General revision and independent correction share a single request path.
+const revisionBaseline=await value('/api/history/'+correctionOriginal.id);
+musicXmlLogs='LABXML-BEGIN'+JSON.stringify({name:'SequentialMusic',len:1,elements:[]})+'LABXML-END';
+const reviseInput={...repairInput,operation:'revise',task:'Gestalte die linke Hand freier. Erhalte die rechte Hand.',diagnostics:'',runId:'ab12000020261018aabbccddeeff0001'};
+const beforeRevision=paid;const revision=await value('/api/run',{method:'POST',data:reviseInput});assert.equal(paid,beforeRevision+1);assert.equal(revision.operation,'revise');assert(revision.compiled.url);assert(!revision.compiled.incomplete);assert.notEqual(revision.historyId,correctionOriginal.id);assert.equal(revision.revision.originalHistoryId,correctionOriginal.id);assert.equal(revision.revision.instructions,reviseInput.task);assert.equal(revision.costs.realisation,.0101);assert(requests.at(-1).messages[1].content.includes(reviseInput.task));assert(requests.at(-1).messages[1].content.includes(answer));assert(requests.at(-1).messages[0].content.includes('vollständige endgültige LilyPond'));
+assert.deepEqual((await value('/api/history/'+correctionOriginal.id)).entry,revisionBaseline.entry);
+const correction=await value('/api/run',{method:'POST',data:{...reviseInput,operation:'correct',task:'IGNORED_CHANGE_REQUEST',runId:'ab12000020261018aabbccddeeff0002'}});assert.equal(correction.operation,'correct');assert(!JSON.stringify(requests.at(-1).messages).includes('IGNORED_CHANGE_REQUEST'));assert(requests.at(-1).messages[0].content.includes('musikalische Schwächen'));assert.equal(correction.revision.instructions,'');assert.equal(correction.correctionStages.at(-1).task,'Selbstständige Korrektur');assert(correction.compiled.completeness);assert.equal((await value('/api/workspace')).workspace.revision.mode,'correct');
+const emptyTaskCorrection=await value('/api/run',{method:'POST',data:{...reviseInput,operation:'correct',task:'',runId:'ab12000020261018aabbccddeeff0003'}});assert(emptyTaskCorrection.compiled.url);
+const beforeInvalid=paid;assert.equal((await call('/api/run',{method:'POST',data:{...reviseInput,task:'',runId:'ab12000020261018aabbccddeeff0004'}})).status,400);assert.equal(paid,beforeInvalid);
+assert.equal((await call('/api/run',{method:'POST',data:{...reviseInput,code:answer+' edited',runId:'ab12000020261018aabbccddeeff0005'}})).status,400);assert.equal(paid,beforeInvalid);
+compositionFinish='length';const cutRevision=await value('/api/run',{method:'POST',data:{...reviseInput,runId:'ab12000020261018aabbccddeeff0006'}});assert(cutRevision.compiled.incomplete);assert.equal(cutRevision.revision.mode,'revise');assert.notEqual(cutRevision.historyId,correctionOriginal.id);compositionFinish='stop';
+musicXmlLogs='LABXML-BEGIN'+JSON.stringify({len:54,elements:[{name:'ContextSpeccedMusic','context-type':'Staff','create-new':true,len:54},{name:'ContextSpeccedMusic','context-type':'Staff','create-new':true,len:9}]})+'LABXML-END';const unequal=await value('/api/run',{method:'POST',data:{...reviseInput,operation:'correct',runId:'ab12000020261018aabbccddeeff0007'}});assert(unequal.compiled.incomplete);assert(unequal.compiled.error.includes('ungleich lang'));assert.deepEqual((await value('/api/history/'+correctionOriginal.id)).entry,revisionBaseline.entry);musicXmlLogs='';
+console.log('PASS: general revision and self-directed correction submit one paid request; task reuse versus explicit ignoring, original/history/metadata/costs, empty automatic task, invalid and stale inputs, truncation and unequal staff lengths.');
+const interruptedRevision='ab12000020261018aabbccddeeff0008';
+await env.BUCKET.put('runs/'+interruptedRevision+'.json',JSON.stringify({status:'running',updatedAt:new Date(Date.now()-100000).toISOString()}));
+await env.BUCKET.put('checkpoints/'+interruptedRevision+'.json',JSON.stringify({input:{operation:'correct',model:'test/model',task:'',title:'Teststück',compositionReasoning:'high',originalHistoryId:correctionOriginal.id},response:{model:'actual/reviser',usage:{cost:.02},choices:[{message:{content:answer},finish_reason:'interrupted'}]}}));
+const beforeRestore=paid;const restoredRevision=await value('/api/run-status?runId='+interruptedRevision);assert.equal(paid,beforeRestore);assert(restoredRevision.result.compiled.incomplete);assert.equal(restoredRevision.result.revision.mode,'correct');assert.equal(restoredRevision.result.costs.composition,.03);assert.equal(restoredRevision.result.costs.realisation,.03);assert.equal(restoredRevision.result.correctionStages.at(-1).actualModel,'actual/reviser');assert.deepEqual((await value('/api/history/'+correctionOriginal.id)).entry,revisionBaseline.entry);
+console.log('PASS: interrupted general correction restores source, parent, model stage and realisation costs without starting another paid call.');

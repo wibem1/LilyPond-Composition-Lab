@@ -1,5 +1,7 @@
 # V1.1.0 · Wiederherstellung abgebrochener Kompositionen
 
+Historische Dokumentation. Ab V1.2.0 übernehmen die [allgemeinen Bearbeitungsaktionen](release-1.2.md) die sichtbare Bedienung; das zusätzliche Korrekturfeld und der besondere Vervollständigungsbutton entfallen.
+
 Die Oberfläche von V1.0 bleibt erhalten. Bei einem Fragment erscheint unter dem Compilerhinweis zusätzlich **Komposition vervollständigen**. Der Button startet einen zusätzlichen KI-Aufruf mit dem gewählten Modell und Denkaufwand. Ein bloßer Verbindungsaufbau startet keinen neuen Kompositionsauftrag.
 
 ## Datenfluss
