@@ -31,7 +31,7 @@ export async function streamRun(request,env,ctx,runId,execute,io){
   try{
    await io.log('lauf_gestartet',runId,{transport:'ndjson-heartbeat',heartbeatSeconds:10});
    const response=await execute(request,env);const result=await response.json();
-   state.status=response.ok?'completed':'failed';state.httpStatus=response.status;state.result=result;state.phase=response.ok?'Abgeschlossen':'Fehlgeschlagen';
+   const incomplete=Boolean(result?.compiled?.incomplete);state.status=response.ok&&!incomplete?'completed':'failed';state.httpStatus=incomplete?422:response.status;state.result=result;state.phase=incomplete?'Unvollständige Komposition gesichert':response.ok?'Abgeschlossen':'Fehlgeschlagen';
   }catch(e){state.status='failed';state.httpStatus=500;state.result={runId,error:'Serververarbeitung fehlgeschlagen.'};state.phase='Fehlgeschlagen';await io.log('lauf_fehler',runId,{name:e.name,message:'Fehler außerhalb der Kompositionsverarbeitung.'});}
   finally{
    clearInterval(timer);active.delete(runId);await persist();
