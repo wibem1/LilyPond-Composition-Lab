@@ -517,12 +517,13 @@ async function run(req,env){
   const base={...workflowFields(conceptEntry),compositionStage,id:conceptEntry?.id,draft:conceptEntry?.draft||'',title:compositionFilename(title),task,system,techout:code,compositionModel:model,actualCompositionModel,format:'lilypond',runId,downloads,costs:{composition:(Number(conceptEntry?.costs?.composition)||0)+(Number(usage?.cost)||0),realisation:Number(conceptEntry?.costs?.realisation)||0},tokens1:max_tokens,compositionReasoning};
   // Persist the composition before naming or compiling; raw answer stays in diagnosis.
   const saved=await saveHistory(env,base);
-  if(finish==='length'){
-   const compiled={error:'KI-Antwort wegen des Tokenlimits abgeschnitten. Der Notentext ist unvollständig. Bitte das Tokenbudget erhöhen und erneut komponieren.',incomplete:true};
+  if(finish!=='stop'||!(/\\score\s*\{/.test(code))){
+   const reason=finish==='length'?'Tokenlimit erreicht':finish==='error'?'Modellanbieter meldet einen Fehler':!(/\\score\s*\{/.test(code))?'\\score-Block fehlt':'Antwort nicht regulär abgeschlossen ('+String(finish||'unbekannt')+')';
+   const compiled={error:'Unvollständige KI-Antwort: '+reason+'. Der vorhandene Notentext wurde gesichert.',incomplete:true,finish_reason:finish};
    if(code)downloads.push({label:'Unvollständige LilyPond-Datei',url:await saveFile(env,title,'ly',code)});
    const entry={...base,id:saved.id,compiler:compiled.error,pages:[],midiUrl:''};
    await saveHistory(env,entry);await putJson(env,'workspace/current.json',{...entry,historyId:saved.id});
-   await log(env,'ausgabelimit',runId,{max_tokens,warning:compiled.error});
+   await log(env,'unvollstaendige_antwort',runId,{max_tokens,finish_reason:finish,warning:compiled.error});
    return json({...entry,...workflowFields(base),draft:base.draft,runId,historyId:saved.id,title:entry.title,answer:code,rawAnswer:answer,downloads,usage,costs:base.costs,finish_reason:finish,compiled,durationMs:Date.now()-started});
   }
   if(usedKeys.has(titleKey(title))){
