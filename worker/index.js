@@ -149,6 +149,8 @@ async function compileLilyMidi(env,code,title,runId,task=''){
    sourceTrace.push({stage,sha256,length:src.length,pedalCommands:(src.match(/\\sustain(?:On|Off)\b/g)||[]).length});
    return src;
   };
+  await sourceFingerprint('imported-original',code);
+  await sourceFingerprint('midi-preparation',prepared.code);
   let performance;
   try{performance=expressionPlayback(prepared.code);}catch(e){performance={code:prepared.code,mode:'fallback',warning:e.message};}
   let result=await rpc('render',{backend:'svg',src:await sourceFingerprint('expression-playback',initialInstrumentNames(performance.code)),version:'stable'});
@@ -176,7 +178,9 @@ async function compileLilyMidi(env,code,title,runId,task=''){
     }
    }catch(e){ottava={status:'rejected',passages:[],error:String(e.message||e)};}
   }
-  const logs=String(result.logs||''),diagnostics=compilerDiagnostics(logs);
+  const compilerLogs=String(result.logs||'');
+  const logs=compilerLogs+'\nLAB-SOURCE-TRACE '+JSON.stringify(sourceTrace);
+  const diagnostics=compilerDiagnostics(compilerLogs);
   if(diagnostics.status==='error')return {error:'LilyPond meldet Compilerfehler. Der erzeugte Notensatz ist nicht verlässlich.',logs,diagnostics,sourceTrace,durationMs:Date.now()-started};
   if(result.err)return {error:'LilyPond-Kompilierung fehlgeschlagen: '+String(result.err),logs,sourceTrace,durationMs:Date.now()-started};
   const pages=[];
