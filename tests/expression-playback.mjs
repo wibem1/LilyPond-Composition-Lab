@@ -6,6 +6,18 @@ const source=await readFile('tests/fixtures/expression.ly','utf8');
 const p=expressionPlayback(source);assert.equal(p.mode,'articulate');assert.equal(p.scores,1);
 assert(p.code.includes(source.slice(source.indexOf('\\score')).replace('\\midi {}','')),'printed score retains every original notation character except the MIDI block');
 assert.equal(expressionPlayback('\\score { { c4 } \\layout {} }').mode,'basic');
+
+// Regression: compiling the same piece after removing pedal marks must not
+// resurrect the pedal events from an older source or from the playback wrapper.
+const withPedal=String.raw`\version "2.24.3"
+\score { { c4\sustainOn d4\sustainOff e4 f4 } \layout {} \midi {} }`;
+const withoutPedal=withPedal.replace(/\\sustain(?:On|Off)\b/g,'');
+const pedalCount=s=>(s.match(/\\sustain(?:On|Off)\b/g)||[]).length;
+assert.equal(pedalCount(withPedal),2);
+assert.equal(pedalCount(withoutPedal),0);
+assert.equal(pedalCount(expressionPlayback(withPedal).code),4,'original and playback score retain written pedal marks');
+assert.equal(pedalCount(expressionPlayback(withoutPedal).code),0,'pedal-free source stays pedal-free in both scores');
+
 const custom='\\include "articulate.ly"\n\\score { \\articulate { c4 } \\midi {} }';assert.deepEqual(expressionPlayback(custom),{code:custom,mode:'author',scores:0});
 const book='\\book { \\score { \\header { title = "} \\score {" } { c4 } \\midi {} } \\score { { d4 } \\midi {} } }';assert.equal(expressionPlayback(book).scores,2);
 assert.equal(expressionPlayback('% \\score { fake }\n%{ \\score { } %}\n\\score { { c4^"}" } \\midi {} }').scores,1);

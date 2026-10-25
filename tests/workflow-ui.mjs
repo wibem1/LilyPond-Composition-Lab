@@ -84,6 +84,21 @@ assert.equal(db.workspace.techout,originalSource,'no stale result saved over new
 duringCompile=null;
 console.log('PASS: real UI play path upgrades saved legacy MIDI before fetching, persists timing marker in history/workspace across reload, costs no AI call, rejects failed compilation and concurrent source edits without stale playback.');
 
+// The editor must send each imported/revised source exactly once per explicit
+// compile and must not show a previous run's diagnostics.
+db.workspace=null;ui=await open();
+ui.get('code').value='\\\\score { { c4\\\\sustainOn d4\\\\sustainOff } \\\\midi {} }';
+await ui.get('compile').onclick();
+const firstCompile=compileCalls.at(-1);
+assert(firstCompile.code.includes('sustainOn'));
+ui.get('code').value='\\\\score { { c4 d4 } \\\\midi {} }';
+await ui.get('compile').onclick();
+const secondCompile=compileCalls.at(-1);
+assert(!secondCompile.code.includes('sustain'));
+assert.notEqual(firstCompile.runId,secondCompile.runId,'every click must have a fresh run ID');
+assert(!ui.get('compiler').textContent.includes('sustainOn'),'previous compile diagnostics must be cleared');
+console.log('PASS: compile sends current editor text with fresh run IDs and clears old diagnostics.');
+
 // Export is a separate operation on the edited source and retains MIDI/code.
 ui=await open();const xmlSource=ui.get('code').value,xmlMidi=db.workspace.midiUrl,paidBeforeXml=requests.length;
 await ui.get('saveMusicXml').onclick();assert.equal(xmlCalls.length,1);assert.equal(xmlCalls[0].code,xmlSource);

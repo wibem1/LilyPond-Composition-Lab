@@ -1,0 +1,23 @@
+name: Verify LilyPond 1.2.12 candidate
+on:
+  push:
+    branches:
+      - fix/compile-source-diagnostics-20261025
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run validate
+      - run: node tests/sonnet-hacklily-live.mjs
