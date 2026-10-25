@@ -1,5 +1,23 @@
 # Projektstand – LilyPond Composition Lab
-Stand: 25.10.2026 · **V1.2.11 als begrenztes Fehlerkorrektur-Update veröffentlicht**
+Stand: 25.10.2026 · **V1.2.12 auf bestehender privater Site bereitgestellt; interaktiver Endtest offen**
+
+
+## Produktionsbereitstellung V1.2.12 · 25.10.2026
+
+- Ausdrücklicher Veröffentlichungsauftrag umgesetzt, ausschließlich Anwendungsstand von GitHub-Commit `c1c3ddf6c729bbf055dcbb6253ba968744b683cd`; keine neue Zwischenversion und keine Codeänderung. Alle 128 GitHub-Dateiblobs anhand ihrer Git-Hashes mit der Hosting-Arbeitskopie abgeglichen: identisch. Der Unterschied zwischen dem erfolgreich getesteten `90cca1a` und `c1c3ddf` betrifft ausschließlich diese Projektstanddatei.
+- Actions **40226416845** geprüft: abgeschlossen/erfolgreich, einschließlich Installation, Build, npm test, validate und Live-Hacklily. Zusätzlich im Veröffentlichungsarbeitsbereich Build, validate und alle **27 Testprogramme** erfolgreich.
+- Bestehende Site unverändert: https://lilypond-composition-lab.wibem1.chatgpt.site · Projekt-ID `appgprj_6ac4b686895c8191a5a47a1e6263362f`. Owner-only-Zugriff und Zugriffsrichtlinie unverändert; keine neue Anwendung.
+- Hosting-Quellcommit `bdcb00aa97f3cb10bb740815d6f2528d86f644e3`; erfolgreicher Deploy `appgdep_6ade5ab46c68819181eb2c4cde4c34f5`, Version-ID `appgprj_6ac4b686895c8191a5a47a1e6263362f~appgver_908a74c21ab08191b1e06dc03b93252d`, bestätigt am 25.10.2026 um 20:38:47 MEZ. Runtime-Environment-Revision weiterhin **1**, bestehendes Verschlüsselungssecret und R2-Bindung unverändert.
+- Erhaltung geprüft: HTTP 200 und identische SHA-256-Prüfsummen vor/nach Deploy für `/api/workspace`, `/api/history`, `/api/key-status` und `/api/soundfont`. Keine produktiven Kompositionen, Einstellungen, Schlüssel oder SoundFonts gelöscht/zurückgesetzt. Testkompilierung erzeugte ausschließlich zusätzliche Compilerdateien/Diagnosen; keine Historien- oder Arbeitsstandänderung.
+- **Echter produktiver Compilerpfad bestanden:** Repository-Fixture `tests/fixtures/sonnet-standuhr-original.ly` an den veröffentlichten `/api/compile-lilypond` gesendet; HTTP 200, eine SVG-Notenseite und MIDI (2831 Bytes) erzeugt und jeweils über die produktiven Downloadrouten erfolgreich abgerufen. MIDI mit dem gemeinsamen App-Parser geprüft: **293 Noten, zwei Kanäle, 83,189748 Sekunden**.
+- Quellnachweis: 4643 Zeichen, 50 Pedalbefehle; SHA-256 des empfangenen Fixtures `05d652d2246b98c46a0ca7ab17151d5dbeda3fd9bbb03439ee8fd5f62522e675` stimmt mit `LAB-SOURCE-TRACE imported-original` überein. Dieser Hash ist der tatsächlich im Repository vorhandenen Fixture zugeordnet; frühere Hashangaben oben sind historische Dateivergleiche.
+- Erwartete sichtbare Warnung im produktiven Ergebnis: interner LilyPond-Seitenaufteilungsfehler; SVG und MIDI dennoch vorhanden. Erweiterte Ausdruckswiedergabe fiel auf normale MIDI-Wiedergabe zurück. Kein Nachweis einer Behebung des LilyPond-internen Layoutfehlers.
+- Versionsprüfung: produktive Startseitenantwort enthält **V1.2.12**. Eine Kontrolle der Versionsanzeige im angemeldeten Browser ist noch nicht erfolgt.
+- **Interaktiver Endtest nicht abgeschlossen:** Der Cloud-Testbrowser zeigte die ChatGPT-Anmeldung; die sichere Anmeldeanfrage wurde abgelehnt. Deshalb Import über Dateiauswahl, tatsächliche Anzeige des Notenbilds und Start/Hörprüfung des Players in der Online-Oberfläche **nicht verifiziert**. Die automatisierten UI-/Player-Tests ersetzen diesen fehlenden Endtest nicht. Kein vollständig bestandener Integrationstest und keine uneingeschränkte Funktionsfreigabe behauptet.
+- Keine kostenpflichtige KI-Komposition und kein KI-Reparaturaufruf ausgelöst.
+- **Nächster einzelner Schritt:** Mit angemeldetem Testbrowser die vorhandene Site öffnen und Sonnet-Original importieren, kompilieren, Notenseite visuell prüfen und MIDI-Player starten; danach Testergebnis ergänzen. Bis dahin ist die Bereitstellung erfolgreich, die vollständige Endabnahme offen.
+
+Die nachfolgenden Abschnitte dokumentieren den Entwicklungsverlauf vor dieser Bereitstellung; ihre damaligen Hinweise „unveröffentlicht“ sind historisch.
 
 ## In Arbeit: V1.2.12 – Import-/Compilerdiagnose (noch nicht freigegeben)
 
