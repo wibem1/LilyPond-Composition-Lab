@@ -9,10 +9,11 @@ export function noteRunProgress(runId,event,data){
 }
 export async function readRunSession(runId,io){
  const state=await io.read('runs/'+runId+'.json');
- if(state?.status==='running'&&Date.now()-Date.parse(state.updatedAt)>90000){
+ // The provider stream may legally take ten minutes; do not falsely declare a paid run dead after 90 seconds.
+ if(state?.status==='running'&&Date.now()-Date.parse(state.updatedAt)>660000){
   const lastPhase=state.phase;state.status='interrupted';state.phase='Verarbeitung unterbrochen';state.updatedAt=new Date().toISOString();
   await io.write('runs/'+runId+'.json',state);
-  await io.log('lauf_unterbrochen',runId,{reason:'Keine Server-Aktualisierung seit mehr als 90 Sekunden. Ursache nicht nachgewiesen.',lastPhase});
+  await io.log('lauf_unterbrochen',runId,{reason:'Keine Server-Aktualisierung seit mehr als 11 Minuten. Ursache nicht nachgewiesen.',lastPhase});
  }
  if(state?.status==='interrupted'&&io.restore){
   const result=await io.restore(runId);
