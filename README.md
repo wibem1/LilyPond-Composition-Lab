@@ -48,7 +48,7 @@ Bedienung und Datenfluss der allgemeinen Bearbeitungen: [Überarbeiten und Korri
 
 ## Entwicklungsstand 25.10.2026
 
-V1.2.1 ist wegen einer nachgewiesenen Hosting-Laufzeitgrenze noch nicht freigegeben. Die Korrekturen auf PR #1 sind lokal geprüft; ein laufender Provideraufruf überlebt einen längeren Browserabbruch damit noch nicht zuverlässig. Befund und fehlender dauerhafter Auftragsdienst: [Untersuchung vom 25.10.2026](docs/incident-2026-10-25.md).
+V1.2.1 ist wegen einer nachgewiesenen Hosting-Laufzeitgrenze noch nicht freigegeben. Die Korrekturen auf PR #1 sind lokal geprüft; ein laufender Provideraufruf überlebt einen längeren Browserabbruch damit noch nicht zuverlässig. Befund und fehlender dauerhafter Auftragsdienst: [Untersuchung vom 25.10.2026](docs/investigation-2026-10-25.md).
 
 ## Dienste und Veröffentlichung
 

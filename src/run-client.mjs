@@ -39,7 +39,7 @@ export class RunClient{
     failures=0;
     if(job.status==='completed'||job.status==='failed'){this.record(runId,'recovery_completed',job.status);await this.flush();return this.finish(job.httpStatus||200,job.result);}
     if(job.status==='interrupted'){this.record(runId,'recovery_stopped','Serververarbeitung unterbrochen; kein neuer KI-Aufruf.');await this.flush();this.write(PENDING,null);throw Object.assign(Error('Serververarbeitung unterbrochen. Bereits erzeugte Komposition im Verlauf erhalten; siehe Diagnose.'),{terminal:true});}
-    if(job.status==='unknown'){if(++missing>=5){this.write(PENDING,null);throw Object.assign(Error('Auftrag konnte nicht bestätigt werden. Es wurde kein automatischer neuer KI-Aufruf gestartet.'),{terminal:true});}this.onprogress('Auftragsstatus wird geprüft …');}
+    if(job.status==='unknown'){if(++missing>=5){throw Object.assign(Error('Auftrag konnte nicht bestätigt werden und bleibt zur Wiederherstellung vorgemerkt. Es wurde kein automatischer neuer KI-Aufruf gestartet.'),{terminal:true});}this.onprogress('Auftragsstatus wird geprüft …');}
     else {missing=0;this.onprogress(job.phase+' · Verbindung wiederhergestellt');}
    }catch(e){if(e.terminal)throw e;this.record(runId,'network_error',e.message);this.onprogress('Verbindung fehlt. Wiederherstellung wird versucht …');if(++failures>=20){this.record(runId,'recovery_stopped','Wiederherstellung pausiert; beim nächsten Öffnen fortsetzen.');throw Error('Verbindung weiterhin nicht erreichbar. Der Auftrag bleibt zur Wiederherstellung vorgemerkt.');}}
    await this.delay(3000);

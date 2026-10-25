@@ -1,6 +1,5 @@
-// Keep the HTTP body active, persist results, and never repeat a paid request
-// merely because a browser reconnects. waitUntil is limited to 30 seconds
-// after disconnect on Workers; this is NOT durable background execution.
+// Streaming keeps an attached HTTP invocation active. waitUntil only grants a
+// short disconnect grace period, NOT durable background execution.
 const active=new Map();
 const starting=new Set();
 export function noteRunProgress(runId,event,data){
@@ -9,16 +8,30 @@ export function noteRunProgress(runId,event,data){
  if(phase){session.state.phase=phase;session.send({type:'progress',phase});}
 }
 export async function readRunSession(runId,io){
- const state=await io.read('runs/'+runId+'.json');
+ let state=await io.read('runs/'+runId+'.json')||await io.readClaim?.(runId);
  // The provider stream may legally take ten minutes; do not falsely declare a paid run dead after 90 seconds.
  if(state?.status==='running'&&Date.now()-Date.parse(state.updatedAt)>660000){
-  const lastPhase=state.phase;state.status='interrupted';state.phase='Verarbeitung unterbrochen';state.updatedAt=new Date().toISOString();
-  await io.write('runs/'+runId+'.json',state);
+  const previous=structuredClone(state),lastPhase=state.phase;
+  state={...state,status:'interrupted',phase:'Verarbeitung unterbrochen',updatedAt:new Date().toISOString()};
+  if(io.replace){
+   // A concurrent final save must never be overwritten by a stale status read.
+   if(!await io.replace('runs/'+runId+'.json',previous,state)){
+    const current=await io.read('runs/'+runId+'.json');if(current)return current;
+    // A durable claim can outlive a failed initial status save.
+    if(io.create){if(!await io.create('runs/'+runId+'.json',state))return io.read('runs/'+runId+'.json');}
+    else await io.write('runs/'+runId+'.json',state);
+   }
+  }else await io.write('runs/'+runId+'.json',state);
   await io.log('lauf_unterbrochen',runId,{reason:'Keine Server-Aktualisierung seit mehr als 11 Minuten. Ursache nicht nachgewiesen.',lastPhase});
  }
  if(state?.status==='interrupted'&&io.restore){
   const result=await io.restore(runId);
-  if(result){state.result=result;state.status='failed';state.httpStatus=422;state.phase='Unvollständige Komposition gesichert';await io.write('runs/'+runId+'.json',state);}
+  if(result){
+   const previous=structuredClone(state);
+   state={...state,result,status:'failed',httpStatus:422,phase:'Unvollständige Komposition gesichert'};
+   if(io.replace){if(!await io.replace('runs/'+runId+'.json',previous,state))return await io.read('runs/'+runId+'.json');}
+   else await io.write('runs/'+runId+'.json',state);
+  }
  }
  return state;
 }
@@ -27,13 +40,12 @@ export async function streamRun(request,env,ctx,runId,execute,io){
  starting.add(runId);
  let existing;try{existing=await readRunSession(runId,io);}catch(e){starting.delete(runId);throw e;}
  if(existing){starting.delete(runId);return Response.json({runId,resume:true},{headers:{'Cache-Control':'no-store'}});}
- // The in-memory guards above cover one isolate only. Reserve in persistent
- // storage before any provider work, and fail closed if storage is unavailable.
- try{
-  if(io.claim&&!await io.claim(runId)){starting.delete(runId);return Response.json({runId,resume:true},{headers:{'Cache-Control':'no-store'}});}
- }catch(e){starting.delete(runId);throw e;}
  let controller,cancelled=false;
  const state={runId,status:'running',phase:'Verbindung und Compiler werden geprüft',startedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+ if(io.claim){
+  try{if(!await io.claim(runId,state)){starting.delete(runId);return Response.json({runId,resume:true},{headers:{'Cache-Control':'no-store'}});}}
+  catch(e){starting.delete(runId);throw e;}
+ }
  let writes=Promise.resolve();
  const persist=()=>{state.updatedAt=new Date().toISOString();const snapshot=structuredClone(state);writes=writes.catch(()=>{}).then(()=>io.write('runs/'+runId+'.json',snapshot));return writes;};
  const send=value=>{if(cancelled||!controller)return;try{controller.enqueue(new TextEncoder().encode(JSON.stringify(value)+'\n'));}catch{cancelled=true;}};
@@ -47,11 +59,22 @@ export async function streamRun(request,env,ctx,runId,execute,io){
    const response=await execute(request,env);const result=await response.json();
    const incomplete=Boolean(result?.compiled?.incomplete||result?.compiled?.error);
    state.status=response.ok&&!incomplete?'completed':'failed';state.httpStatus=incomplete?422:response.status;state.result=result;state.phase=incomplete?'Unvollständige Komposition gesichert':response.ok?'Abgeschlossen':'Fehlgeschlagen';
-  }catch(e){state.status='failed';state.httpStatus=500;state.result={runId,error:'Serververarbeitung fehlgeschlagen.'};state.phase='Fehlgeschlagen';await io.log('lauf_fehler',runId,{name:e.name,message:'Fehler außerhalb der Kompositionsverarbeitung.'});}
+  }catch(e){state.status='failed';state.httpStatus=500;state.result={runId,error:'Serververarbeitung fehlgeschlagen.'};state.phase='Fehlgeschlagen';await io.log('lauf_fehler',runId,{name:e.name,message:'Fehler außerhalb der Kompositionsverarbeitung.'}).catch(()=>{});}
   finally{
-   clearInterval(timer);active.delete(runId);await persist();
-   await io.log('lauf_abgeschlossen',runId,{status:state.status,httpStatus:state.httpStatus,durationMs:Date.now()-Date.parse(state.startedAt)});
-   send({type:'result',status:state.httpStatus,result:state.result});if(!cancelled)try{controller.close();}catch{}
+   clearInterval(timer);
+   try{
+    // A failed parser/compiler/storage step must not hide an earlier checkpoint.
+    if(state.result?.error&&io.restore){
+     const partial=await io.restore(runId).catch(()=>null);
+     if(partial){state.result=partial;state.httpStatus=422;state.phase='Unvollständige Komposition gesichert';}
+    }
+    await persist();
+    // Diagnosis logging is not part of the result commit.
+    await io.log('lauf_abgeschlossen',runId,{status:state.status,httpStatus:state.httpStatus,durationMs:Date.now()-Date.parse(state.startedAt)}).catch(()=>{});
+    send({type:'result',status:state.httpStatus,result:state.result});
+   }catch{
+    send({type:'progress',phase:'Ergebnis konnte nicht bestätigt werden. Gespeicherter Auftrag wird erneut abgefragt.'});
+   }finally{active.delete(runId);if(!cancelled)try{controller.close();}catch{}}
   }
  })();
  ctx?.waitUntil?.(work);

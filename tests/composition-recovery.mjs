@@ -2,12 +2,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import worker from '../worker/index.js';
 import {RunClient} from '../src/run-client.mjs';
-class Bucket{
- constructor(){this.items=new Map();}
- async put(k,v,opts={}){if(opts.onlyIf?.get('If-None-Match')==='*'&&this.items.has(k))return null;this.items.set(k,{v,customMetadata:opts.customMetadata||{}});return {etag:'mock'};}
- async get(k){const e=this.items.get(k);return e?{body:e.v,json:async()=>JSON.parse(e.v)}:null;}
- async list({prefix}){return {objects:[...this.items].filter(([k])=>k.startsWith(prefix)).map(([key,e])=>({key,customMetadata:e.customMetadata})),truncated:false};}
-}
+import {MemoryBucket as Bucket} from './fixtures/memory-bucket.mjs';
+
 const env={BUCKET:new Bucket()},tasks=[];
 const fixture=JSON.parse(await readFile(new URL('fixtures/synthetic-piano-response.json',import.meta.url))).result;
 const prefix="\\version \"2.24.3\"\n\\header {title = \"Fragment\"}\nright = \\absolute { c'1 }\nleft = \\absolute { c4";

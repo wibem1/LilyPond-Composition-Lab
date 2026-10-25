@@ -24,8 +24,8 @@ let concurrentCalls=0,unlock;const block=new Promise(r=>unlock=r),raceTasks=[];
 const concurrentId='dd18000020261018aabbccddeeff0001';
 const start=()=>streamRun(new Request('https://test/run'),{},{waitUntil:p=>raceTasks.push(p)},concurrentId,async()=>{concurrentCalls++;await block;return Response.json({answer:'Once'});},io);
 const [one,two]=await Promise.all([start(),start()]);assert((await two.json()).resume);unlock();await one.text();await Promise.all(raceTasks);assert.equal(concurrentCalls,1);
-const absent=new RunClient({fetch:async url=>Response.json(url.startsWith('/api/run-status')?{status:'unknown'}:{saved:true}),storage:storage(),delay:async()=>{}});absent.write('lilypond-pending-run',{runId:concurrentId});await assert.rejects(absent.recover(),/nicht bestätigt/);assert.equal(absent.pendingRunId,'');
-console.log('PASS: concurrent same-runtime requests execute once; confirmed missing run clears pending marker without automatic resubmission.');
+const absent=new RunClient({fetch:async url=>Response.json(url.startsWith('/api/run-status')?{status:'unknown'}:{saved:true}),storage:storage(),delay:async()=>{}});absent.write('lilypond-pending-run',{runId:concurrentId});await assert.rejects(absent.recover(),/nicht bestätigt/);assert.equal(absent.pendingRunId,concurrentId);
+console.log('PASS: concurrent same-runtime requests execute once; unconfirmed run retains its pending marker and cannot start a new paid request.');
 for(const badStatus of [{status:'unexpected'},{status:'completed'}]){
 let invalidPolls=0;
 const invalid=new RunClient({fetch:async url=>{

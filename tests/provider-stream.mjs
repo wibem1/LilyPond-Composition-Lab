@@ -28,6 +28,24 @@ assert.equal(scoreCompleteness({elements:[staff('RH',54),staff('LH','108/2')]}).
 assert.throws(()=>scoreCompleteness({elements:[staff('RH',54),staff('LH','39/4')]}),/ungleich lang/);
 assert.throws(()=>scoreCompleteness({elements:[staff('empty',0)]}),/keine verlässlich/);
 console.log('PASS: resolved rational staff durations detect a prematurely ended hand even in syntactically complete LilyPond.');
+// DONE is a protocol terminator; providers/proxies need not close TCP promptly.
+let closedAtDone=false;
+const doneStream=new ReadableStream({start(c){c.enqueue(new TextEncoder().encode(event({id:'gen-test',choices:[{delta:{content:original},finish_reason:'stop'}]})+'data: [DONE]\n\n'));},cancel(){closedAtDone=true;}});
+const terminated=await readCompositionResponse(new Response(doneStream,{headers:{'Content-Type':'text/event-stream'}}),{timeoutMs:100});
+assert.equal(terminated.choices[0].finish_reason,'stop');assert.equal(terminated.id,'gen-test');assert(closedAtDone);
+// A final small delta is checkpointed during provider silence, before EOF.
+let silenceController,resolveSaved;const smallSaved=new Promise(resolve=>resolveSaved=resolve),silenceSnapshots=[];
+const silent=new ReadableStream({start(c){silenceController=c;}});
+const reading=readCompositionResponse(new Response(silent,{headers:{'Content-Type':'text/event-stream'}}),{checkpointIntervalMs:10,timeoutMs:1000,checkpoint:async value=>{silenceSnapshots.push(structuredClone(value));if(value.choices[0].message.content==='first tiny')resolveSaved();}});
+silenceController.enqueue(new TextEncoder().encode(event({choices:[{delta:{content:'first'}}]})+event({choices:[{delta:{content:' tiny'}}]})));
+const deadline=setTimeout(()=>silenceController.error(Error('checkpoint did not arrive')),500);
+await Promise.race([smallSaved,reading.then(()=>{throw Error('Stream ended before independent checkpoint');})]);clearTimeout(deadline);assert.equal(silenceSnapshots.at(-1).choices[0].message.content,'first tiny');
+silenceController.close();assert.equal((await reading).choices[0].message.content,'first tiny');
+// Body timeout keeps already delivered text and the final checkpoint.
+const timedSaved=[];
+const timed=await readCompositionResponse(new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode(event({choices:[{delta:{content:original}}]})));}}),{headers:{'Content-Type':'text/event-stream'}}),{timeoutMs:20,checkpointIntervalMs:5,checkpoint:async data=>timedSaved.push(data)});
+assert.equal(timed.choices[0].message.content,original);assert.match(timed.error.message,/Zeitlimit/);assert.equal(timedSaved.at(-1).choices[0].message.content,original);
+console.log('PASS: DONE with open transport, provider generation ID, independent checkpoint during silence, body timeout and final partial save.');
 // A short delta arriving shortly after the first save must be checkpointed
 // even when the provider then goes silent (e.g. prolonged model reasoning).
 let idleController;const idleSaved=[];
@@ -36,8 +54,8 @@ const idleRead=readCompositionResponse(idleResponse,{checkpoint:async value=>idl
 idleController.enqueue(new TextEncoder().encode(event({choices:[{delta:{content:'first'}}]})));
 while(!idleSaved.length)await new Promise(r=>setTimeout(r,1));
 idleController.enqueue(new TextEncoder().encode(event({choices:[{delta:{content:' small tail'}}]})));
-const deadline=Date.now()+4000;
-while(!idleSaved.some(x=>x.choices[0].message.content==='first small tail')&&Date.now()<deadline)await new Promise(r=>setTimeout(r,10));
+const idleDeadline=Date.now()+4000;
+while(!idleSaved.some(x=>x.choices[0].message.content==='first small tail')&&Date.now()<idleDeadline)await new Promise(r=>setTimeout(r,10));
 const persistedWhileIdle=idleSaved.some(x=>x.choices[0].message.content==='first small tail');
 idleController.close();await idleRead;
 assert(persistedWhileIdle,'short tail is saved before another provider event or stream close');

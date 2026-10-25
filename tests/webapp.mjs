@@ -2,13 +2,8 @@ import assert from 'node:assert/strict';
 import {compositionMessages,cleanGuidelines} from '../src/composition-workflow.mjs';
 import {readFile} from 'node:fs/promises';
 import worker from '../worker/index.js';
-class MemoryBucket{
- constructor(){this.items=new Map()}
- async put(key,value,opts={}){if(opts.onlyIf?.get('If-None-Match')==='*'&&this.items.has(key))return null;const data=typeof value==='string'?new TextEncoder().encode(value):new Uint8Array(value);this.items.set(key,{data,customMetadata:opts.customMetadata||{}});return {etag:'mock'}}
- async get(key){const o=this.items.get(key);if(!o)return null;return {body:o.data,async json(){return JSON.parse(new TextDecoder().decode(o.data))}}}
- async delete(key){this.items.delete(key)}
- async list({prefix}){return {objects:[...this.items].filter(([k])=>k.startsWith(prefix)).map(([key,o])=>({key,customMetadata:o.customMetadata})),truncated:false}}
-}
+import {MemoryBucket} from './fixtures/memory-bucket.mjs';
+
 const env={BUCKET:new MemoryBucket(),LAB_KEY_ENCRYPTION_KEY:btoa('01234567890123456789012345678901')};
 const tiny=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-response.json',import.meta.url),'utf8')).result;
 const driftMidi=(await readFile(new URL('./fixtures/luna-octave-drift.mid',import.meta.url))).toString('base64');let rendererMidi=null;
