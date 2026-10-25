@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {expressionPlayback} from '../src/expression-playback.mjs';
 import {compilerDiagnostics,recoverableLayoutError} from '../src/compiler-diagnostics.mjs';
 const original=await readFile(new URL('./fixtures/sonnet-standuhr-original.ly',import.meta.url),'utf8');
-const pedalFree=original.replace(/\\sustain(?:On|Off)\\b/g,'');
+const pedalFree=original.replace(/\\sustain(?:On|Off)\b/g,'');
 assert(!pedalFree.includes('\\sustainOn'));
 const cases=[['sonnet-original',original],['sonnet-no-pedal',pedalFree]];
 async function render(src){
