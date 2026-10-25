@@ -1,6 +1,16 @@
 # Projektstand – LilyPond Composition Lab
 Stand: 25.10.2026 · **V1.2.11 als begrenztes Fehlerkorrektur-Update veröffentlicht**
 
+## In Arbeit: V1.2.12 – Import-/Compilerdiagnose (noch nicht freigegeben)
+
+- Ziel: identisches Compilerprotokoll bei drei unterschiedlich korrigierten Sonnet-5.5-Dateien untersuchen. Die vollständige Originaldatei funktioniert nach Nutzerangabe direkt in Hacklily.
+- Entwicklungszweig: `fix/compile-source-diagnostics-20261025`, PR #2 (Entwurf).
+- In `worker/index.js` implementiert: SHA-256, Länge und Anzahl der Pedalbefehle des empfangenen Originals und sämtlicher tatsächlich an Hacklily gesendeter Varianten. Ausgabe mit `LAB-SOURCE-TRACE` im Compilerprotokoll; keine kostenpflichtigen KI-Aufrufe.
+- Bisher **keine** Bestätigung der Ursache. Die Daten können zwischen (1) veraltetem App-Arbeitsstand, (2) Fehler in der MIDI-Aufbereitung, (3) echtem Compilerfehler unterscheiden.
+- Testfall: `die-alte-standuhr.ly` von Sonnet 5.5 und die Variante ohne Pedalbefehle (darin 0 `\\sustainOn/Off`).
+- Noch offen: automatisierter Regressionstest und realer Hacklily-Integrationstest; keine Veröffentlichung, kein produktiver Deploy. V1.2.11 bleibt aktuell.
+- Nächster Schritt: den geladenen Quelltext und `LAB-SOURCE-TRACE` vergleichen, nachgewiesene Ursache beseitigen und die Tests erfolgreich ausführen.
+
 ## Quellen und Ziel
 
 Zentrale Standards: https://github.com/wibem1/AI-Development-Standards/blob/main/DEVELOPMENT_STANDARDS.md. Projektregeln: `AGENTS.md`.
