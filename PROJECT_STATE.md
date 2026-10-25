@@ -8,6 +8,7 @@ Stand: 25.10.2026 · **V1.2.11 als begrenztes Fehlerkorrektur-Update veröffentl
 - In `worker/index.js` implementiert: SHA-256, Länge und Anzahl der Pedalbefehle des empfangenen Originals und sämtlicher tatsächlich an Hacklily gesendeter Varianten. Ausgabe mit `LAB-SOURCE-TRACE` im Compilerprotokoll; keine kostenpflichtigen KI-Aufrufe.
 - Bisher **keine** Bestätigung der Ursache. Die Daten können zwischen (1) veraltetem App-Arbeitsstand, (2) Fehler in der MIDI-Aufbereitung, (3) echtem Compilerfehler unterscheiden.
 - Testfall: `die-alte-standuhr.ly` von Sonnet 5.5 und die Variante ohne Pedalbefehle (darin 0 `\\sustainOn/Off`).
+- Zusätzlich implementiert (Commit `bff3c6b`): jeder manuelle Compile erhält eine neue Run-ID; alte Compileranzeige wird vor dem Aufruf gelöscht; während der Kompilierung veränderter Notentext kann kein veraltetes Ergebnis mehr übernehmen. Das ist eine Absicherung, **kein Nachweis für die eigentliche Pedal-Ursache**.
 - Noch offen: automatisierter Regressionstest und realer Hacklily-Integrationstest; keine Veröffentlichung, kein produktiver Deploy. V1.2.11 bleibt aktuell.
 - Nächster Schritt: den geladenen Quelltext und `LAB-SOURCE-TRACE` vergleichen, nachgewiesene Ursache beseitigen und die Tests erfolgreich ausführen.
 
