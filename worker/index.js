@@ -2,7 +2,7 @@ import {revisionMessages} from '../src/composition-revision.mjs';
 import {sourceStatus,lilySource,continuationMessages,appendContinuation} from '../src/composition-recovery.mjs';
 import {readCompositionResponse} from '../src/provider-stream.mjs';
 import {scoreCompleteness} from '../src/score-completeness.mjs';
-import {compilerDiagnostics} from '../src/compiler-diagnostics.mjs';
+import {compilerDiagnostics,recoverableLayoutError} from '../src/compiler-diagnostics.mjs';
 import {compositionCosts} from '../src/composition-costs.mjs';
 import {APP_VERSION as VERSION,MIDI_TIMING_POLICY} from '../src/app-config.mjs';
 import {DEFAULT_SYSTEM,currentSystem} from '../src/composition-defaults.mjs';
@@ -181,7 +181,8 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   const compilerLogs=String(result.logs||'');
   const logs=compilerLogs+'\nLAB-SOURCE-TRACE '+JSON.stringify(sourceTrace);
   const diagnostics=compilerDiagnostics(compilerLogs);
-  if(diagnostics.status==='error')return {error:'LilyPond meldet Compilerfehler. Der erzeugte Notensatz ist nicht verlässlich.',logs,diagnostics,sourceTrace,durationMs:Date.now()-started};
+  const layoutRecovered=recoverableLayoutError(compilerLogs,result);
+  if(diagnostics.status==='error'&&!layoutRecovered)return {error:'LilyPond meldet Compilerfehler. Der erzeugte Notensatz ist nicht verlässlich.',logs,diagnostics,sourceTrace,durationMs:Date.now()-started};
   if(result.err)return {error:'LilyPond-Kompilierung fehlgeschlagen: '+String(result.err),logs,sourceTrace,durationMs:Date.now()-started};
   const pages=[];
   for(const [i,svg] of (result.files||[]).entries())if(typeof svg==='string'&&svg.includes('<svg'))pages.push({label:'Notenseite '+(i+1),url:await saveFile(env,title+'-Seite-'+(i+1),'svg',svg)});
@@ -201,7 +202,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   else warning='LilyPond erzeugte keine MIDI-Datei.';
   if(performance.mode==='fallback')warning=[warning,'Erweiterte Ausdruckswiedergabe fehlgeschlagen; normale MIDI-Wiedergabe verwendet.'].filter(Boolean).join('\n');
   if(ottava.status==='rejected')warning=[warning,'Automatische Oktavzeichen nicht übernommen; ursprüngliche Notation erhalten.'].filter(Boolean).join('\n');
-  warning=[diagnostics.warnings.length?'Compilerwarnungen:\n'+diagnostics.warnings.join('\n'):'',warning].filter(Boolean).join('\n');
+  warning=[layoutRecovered?'LilyPond meldete einen internen Fehler der Seitenaufteilung; SVG und MIDI wurden trotzdem erzeugt. Bitte Notenbild vor Verwendung prüfen.':'',diagnostics.warnings.length?'Compilerwarnungen:\n'+diagnostics.warnings.join('\n'):'',warning].filter(Boolean).join('\n');
   return {diagnostics,sourceTrace,...(displayCode?{code:displayCode}:{}),ottava,url,midiTimingPolicy:url?MIDI_TIMING_POLICY:'',label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,trillPolicy:performance.mode==='articulate'?'musical-v2':null,arpeggioPolicy:performance.mode==='articulate'?'rolled-chord-v1':null,voiceTimingPolicy:performance.mode==='articulate'?'independent-voices-v1':null,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
