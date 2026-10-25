@@ -141,12 +141,20 @@ async function compileLilyMidi(env,code,title,runId,task=''){
  if(code.length>200000)return {error:'LilyPond-Quelle ist zu groß.'};
  try{
   const prepared=ensureMidiDirective(code);
+  // Trace the exact sources actually submitted to Hacklily; no source text or secrets in diagnostics.
+  const sourceTrace=[];
+  const sourceFingerprint=async (stage,src)=>{
+   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(src));
+   const sha256=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+   sourceTrace.push({stage,sha256,length:src.length,pedalCommands:(src.match(/\\sustain(?:On|Off)\b/g)||[]).length});
+   return src;
+  };
   let performance;
   try{performance=expressionPlayback(prepared.code);}catch(e){performance={code:prepared.code,mode:'fallback',warning:e.message};}
-  let result=await rpc('render',{backend:'svg',src:initialInstrumentNames(performance.code),version:'stable'});
+  let result=await rpc('render',{backend:'svg',src:await sourceFingerprint('expression-playback',initialInstrumentNames(performance.code)),version:'stable'});
   if((result.err||compilerDiagnostics(result.logs).status==='error')&&performance.mode==='articulate'){
    const expressionError=String(result.err)+' '+String(result.logs||'');
-   result=await rpc('render',{backend:'svg',src:initialInstrumentNames(prepared.code),version:'stable'});
+   result=await rpc('render',{backend:'svg',src:await sourceFingerprint('basic-fallback',initialInstrumentNames(prepared.code)),version:'stable'});
    performance={mode:'fallback',warning:expressionError};
   }
   let ottava={status:'unchanged',passages:[]},displayCode='';
@@ -159,7 +167,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
      if(planned.passages.length){
       const visualPrepared=ensureMidiDirective(planned.code).code;
       const visual=performance.mode==='articulate'?expressionPlayback(visualPrepared).code:visualPrepared;
-      const candidate=await rpc('render',{backend:'svg',src:initialInstrumentNames(visual),version:'stable'});
+      const candidate=await rpc('render',{backend:'svg',src:await sourceFingerprint('automatic-ottava',initialInstrumentNames(visual)),version:'stable'});
       if(candidate.err||compilerDiagnostics(candidate.logs).status!=='passed'||!candidate.midi||!(candidate.files||[]).some(f=>typeof f==='string'&&f.includes('<svg')))throw Error('Oktavzeichen konnten nicht fehlerfrei kompiliert werden.');
       const bytes=bytes64(candidate.midi),midi=parseMidi(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
       if(!sameMidiPerformance(originalMidi,midi))throw Error('MIDI unterscheidet sich nach der Notationsänderung.');
@@ -169,8 +177,8 @@ async function compileLilyMidi(env,code,title,runId,task=''){
    }catch(e){ottava={status:'rejected',passages:[],error:String(e.message||e)};}
   }
   const logs=String(result.logs||''),diagnostics=compilerDiagnostics(logs);
-  if(diagnostics.status==='error')return {error:'LilyPond meldet Compilerfehler. Der erzeugte Notensatz ist nicht verlässlich.',logs,diagnostics,durationMs:Date.now()-started};
-  if(result.err)return {error:'LilyPond-Kompilierung fehlgeschlagen: '+String(result.err),logs,durationMs:Date.now()-started};
+  if(diagnostics.status==='error')return {error:'LilyPond meldet Compilerfehler. Der erzeugte Notensatz ist nicht verlässlich.',logs,diagnostics,sourceTrace,durationMs:Date.now()-started};
+  if(result.err)return {error:'LilyPond-Kompilierung fehlgeschlagen: '+String(result.err),logs,sourceTrace,durationMs:Date.now()-started};
   const pages=[];
   for(const [i,svg] of (result.files||[]).entries())if(typeof svg==='string'&&svg.includes('<svg'))pages.push({label:'Notenseite '+(i+1),url:await saveFile(env,title+'-Seite-'+(i+1),'svg',svg)});
   if(!pages.length)return {error:'LilyPond erzeugte kein Notenbild.',logs,durationMs:Date.now()-started};
@@ -190,7 +198,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   if(performance.mode==='fallback')warning=[warning,'Erweiterte Ausdruckswiedergabe fehlgeschlagen; normale MIDI-Wiedergabe verwendet.'].filter(Boolean).join('\n');
   if(ottava.status==='rejected')warning=[warning,'Automatische Oktavzeichen nicht übernommen; ursprüngliche Notation erhalten.'].filter(Boolean).join('\n');
   warning=[diagnostics.warnings.length?'Compilerwarnungen:\n'+diagnostics.warnings.join('\n'):'',warning].filter(Boolean).join('\n');
-  return {diagnostics,...(displayCode?{code:displayCode}:{}),ottava,url,midiTimingPolicy:url?MIDI_TIMING_POLICY:'',label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,trillPolicy:performance.mode==='articulate'?'musical-v2':null,arpeggioPolicy:performance.mode==='articulate'?'rolled-chord-v1':null,voiceTimingPolicy:performance.mode==='articulate'?'independent-voices-v1':null,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
+  return {diagnostics,sourceTrace,...(displayCode?{code:displayCode}:{}),ottava,url,midiTimingPolicy:url?MIDI_TIMING_POLICY:'',label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,trillPolicy:performance.mode==='articulate'?'musical-v2':null,arpeggioPolicy:performance.mode==='articulate'?'rolled-chord-v1':null,voiceTimingPolicy:performance.mode==='articulate'?'independent-voices-v1':null,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
 async function repairOctaves(env,code,title,runId,compiled,task=''){
