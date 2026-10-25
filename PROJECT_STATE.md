@@ -1,36 +1,42 @@
 # Projektstand – LilyPond Composition Lab
-Stand: 25.10.2026 · Korrekturkandidat, Veröffentlichung von **1.2.1 gesperrt**
+Stand: 25.10.2026 · **V1.2.11 als begrenztes Fehlerkorrektur-Update veröffentlicht**
 
-## Verbindliche Quellen
-- Zentrale Regeln: https://github.com/wibem1/AI-Development-Standards/blob/main/DEVELOPMENT_STANDARDS.md
-- Projektregeln: `AGENTS.md`; technische Einzelheiten und Testergebnisse: `docs/investigation-2026-10-25.md`.
-- Aktuell veröffentlicht: **1.2.0**, https://lilypond-composition-lab.wibem1.chatgpt.site
-- Parallel eingetroffener Korrekturcommit `144d4c938f4c90f4eacf3cae988e67d1e0fc671b` wurde integriert; dessen Prüfung auf hartes Runtime-Ende und ungültige Statusantworten bleiben erhalten.
-- Arbeitsbranch: `fix/run-stale-timeout-20261025`, PR #1. Ausgangscommit: `18635f60021979681a2cb1fa1b4741fefe559285`.
-- Bestehende Hosting-Quelle `d802549e57291dd7c787fe1e35db96014a07743c` abgeholt und verglichen: gegenüber GitHub nur die neuen Projektanweisungen, Projektstanddatei und bisherige Timeoutkorrektur/Regressionstest unterschiedlich. Keine Änderung der Site-Identität, Freigabe, Runtime-Secrets oder gespeicherter Benutzerdaten vorgenommen.
+## Quellen und Ziel
 
-## Nachgewiesene Fehlerursache
-Die Originaldiagnose `Diagnose-80f91019ea8f486b992680af0b48049e.json` und aktuelle Produktionslogs wurden gelesen. Browserabbruch 12:34:38.207 UTC; die Serveranfrage wurde um 12:35:08.207 UTC mit `outcome: canceled` beendet (166358 ms gesamte Laufzeit). Das passt genau zur dokumentierten Cloudflare-Grenze von 30 Sekunden für `waitUntil()` nach Verbindungsabbruch. Eine Statusabfrage startet diese Serverausführung nicht neu. Die anschließende 90-Sekunden-Erkennung war zusätzlich zu früh. Der ursprüngliche Auslöser der Browser-Netzwerkunterbrechung ist weiterhin nicht belegt.
+Zentrale Standards: https://github.com/wibem1/AI-Development-Standards/blob/main/DEVELOPMENT_STANDARDS.md. Projektregeln: `AGENTS.md`.
 
-## Implementiert und mit Simulation getestet
-- Bisherige 11-Minuten-Schwelle übernommen; drei ältere Testprogramme an den tatsächlichen neuen Grenzwert angepasst.
-- Atomare, persistente R2-Auftragsreservierung im Streaming-Endpunkt verhindert doppelte Ausführung derselben Kennung über getrennte Serverinstanzen hinweg; unveränderliche Reservierung bleibt auch bei fehlender Statusdatei erhalten. Speicherfehler starten keinen KI-Aufruf.
-- Bedingte Statusänderungen verhindern, dass eine veraltete Statusabfrage ein inzwischen gespeichertes Ergebnis überschreibt.
-- Kleine SSE-Textfragmente werden auch während anschließender Anbieter-Stille gesichert; DONE beendet den Leser ohne Warten auf den Transportabschluss; Anbieterkennung, UTF-8, Kosten und Teilantworten bleiben erhalten.
-- Gesicherte Teilantworten werden auch nach nachfolgenden Verarbeitungsfehlern angeboten. Fehler im Abschlussprotokoll verbergen kein gespeichertes Ergebnis. Ein fehlgeschlagener Ergebnisspeichervorgang wird nicht als Erfolg ausgegeben.
-- Ein unbestätigter Browserauftrag bleibt vorgemerkt, statt nach fünf unbekannten Statusantworten einen neuen Auftrag zuzulassen.
+- Zielversion auf ausdrücklichen Folgeauftrag: **1.2.11**.
+- GitHub-Ausgangsstand: `513d29c2434e872afd46176702b995ab1fabbb59` auf `fix/run-stale-timeout-20261025`, PR #1; alle parallel eingegangenen Korrekturen übernommen.
+- Veröffentlicht: **1.2.11**, https://lilypond-composition-lab.wibem1.chatgpt.site.
+- Erfolgreicher Produktionsdeploy: `appgdep_6ade0cb4de208191a8cb921a3458c08b`, Hosting-Quellcommit `336f402a936b0e83d26567bac0ea5b1d7dfb9f96`, Runtime-Environment-Revision weiterhin **1**.
+- Vorhandene Hosting-Quelle `d802549e57291dd7c787fe1e35db96014a07743c` geöffnet und verglichen. Site-Identität, privater Zugriff, R2-Bindung und Runtime-Secret bleiben erhalten.
 
-## Tatsächliche Prüfungen
-- `npm ci`: erfolgreich.
-- `npm run build`: erfolgreich.
-- `npm test`: **26 Testprogramme bestanden**, einschließlich Worker-API-, Wiederherstellungs-, unabhängiger Modulinstanz-/Reservierungs-, Provider-SSE-, DOM/UI-, Player-, Backup- und Exportprüfungen.
-- `npm run validate`: erfolgreich, erzeugter Worker ist gültiges ESM mit `default.fetch`.
-- `git diff --check`: erfolgreich.
-- Zusätzlich: echter Node-Worker-Thread hart beendet; nur gespeichertes Fragment wiederhergestellt, kein automatischer Provider-Neustart. Das simuliert den Runtime-Verlust, nicht Cloudflare selbst.
-- **Keine kostenpflichtigen KI-Aufrufe**, kein produktiver Kompositionsauftrag und kein neuer Produktionsdeploy.
-- Anbieter/Renderer/R2 werden in den Integrationstests simuliert; vorhandene echte MIDI-/Compilerantworten sind gespeicherte Fixtures, keine hier neu ausgeführten LilyPond-/Gemini-Aufrufe. Node-DOM-Testmodell ist kein echter Safari-/Android-Test.
+## Was V1.2.11 enthält
 
-## Konkreter Freigabeblocker und nächster Schritt
-Der aktuelle HTTP-Worker mit R2 ist **kein browserunabhängiger Auftragsprozessor**. Er kann einen langen KI-Aufruf nach dem 30-Sekunden-Fenster verlieren. Die verfügbaren Sites-Werkzeuge und der dokumentierte Hosting-Vertrag stellen für dieses Projekt keine Provisionierung einer Queue, eines Workflows oder eines Durable-Object-Auftragsdienstes bereit; auch die Anschluss-Suche lieferte keinen passenden Cloudflare-Verwaltungsanschluss. R2 speichert Daten, führt aber keine Aufträge aus.
+Die getesteten Teilkorrekturen sind mit ausdrücklich offener Hosting-Grenze veröffentlicht. Die Oberfläche weist darauf hin, während langer Kompositionen geöffnet und verbunden zu bleiben. **Keine Zusage vollständiger Weiterverarbeitung nach längerem Browserabbruch.** Die frühere Freigabesperre bleibt für diese vollständige Entkopplung bestehen; dieses Update hat einen entsprechend begrenzten Umfang.
 
-**Nächster Schritt:** Einen tatsächlich bereitgestellten Hintergrund-Auftragsdienst an die bestehende Site anbinden; bezahlte Stufen vor Aufruf dauerhaft reservieren und unsichere Stufen niemals automatisch erneut bezahlen. Danach mit simuliertem Anbieter in der echten Hosting-Laufzeit Verbindung für mehr als 30 Sekunden trennen, Browser neu laden und dasselbe vollständige Ergebnis ohne zweiten Anbieteraufruf nachweisen. Erst dann auf **1.2.1** erhöhen, erneut bauen/testen und auf derselben Site veröffentlichen. Die bisherigen grünen Node-Tests erfüllen dieses Freigabekriterium ausdrücklich nicht. PR bleibt Entwurf; kein Merge und keine Veröffentlichung einer nur teilweise behobenen Version.
+- 11-Minuten-Schwelle statt voreiliger Unterbrechung nach 90 Sekunden.
+- Periodische, geordnete SSE-Kontrollstände auch bei Anbieter-Stille; DONE-Abschluss ohne Warten auf das Transportende; Modell, Anbieterkennung, UTF-8 und Kosten erhalten.
+- Atomare R2-Reservierung für `/api/run-stream` über Isolates hinweg; unsichere Laufkennung wird nicht automatisch erneut ausgeführt.
+- Bedingte Statusänderungen schützen abgeschlossene Ergebnisse vor veralteten Statuslesern.
+- Fragmente bleiben nach nachfolgenden Verarbeitungsfehlern verfügbar; Diagnosefehler verbergen kein gespeichertes Ergebnis.
+- Begrenzte Wiederherstellung bei ungültigen Statusdaten; unbestätigter Auftrag bleibt vorgemerkt.
+
+## Tatsächliche Prüfung
+
+- Dependency-Installation einschließlich festem Miniflare 4.20260730.0 erfolgreich.
+- Nach Versionsanhebung: `npm run build`, `npm test` (**27 Testprogramme**) und `npm run validate` erfolgreich.
+- Neuer Integrationstest `tests/worker-runtime.mjs` führt die ausgelieferten Module in tatsächlichem workerd mit lokalem R2 aus: atomare Reservierung, bedingte Schreibvorgänge, SSE-Sicherung während Stille, Ergebnis nach kurzem Clientabbruch und keine doppelte Ausführung.
+- Derselbe Test lädt zusätzlich den exakten Deployment-Bundle und prüft aktuelle Oberfläche sowie unverändertes Lesen älterer Historien- und Arbeitsstanddaten.
+- Weitere Prüfungen: Worker-API, DOM/UI, Auftragsabläufe, Wiederherstellung, harter Node-Runtime-Abbruch, Player, SoundFont, Sicherung, MIDI und Export mit vorhandenen Fixtures und simulierten Anbietern/Renderern.
+- Erwartete workerd-Broken-Pipe-Meldung beim absichtlichen Leserabbruch; alle Ergebnis- und Speicherassertionen bestanden.
+- Keine kostenpflichtigen KI-Anfragen; keine neue reale Gemini-Komposition oder iPad-/Android-Sicht-/Hörprüfung.
+- Produktions-Smoke-Test nach Veröffentlichung bestanden: Startseite zeigt **V1.2.11**; `app-config.mjs`, `run-client.mjs`, Arbeitsstand, Verlauf, Schlüsselstatus und SoundFont-Einstellung liefern HTTP 200. Die SHA-256-Prüfsummen der Antworten für Arbeitsstand, Verlauf, Schlüsselstatus und SoundFont-Einstellung sind vor und nach Veröffentlichung identisch. Keine produktiven Daten geschrieben.
+
+## Bekannte Grenze und nächster Schritt
+
+Die ursprüngliche Diagnose und Produktionsprotokolle belegen: Browserabbruch 12:34:38.207 UTC, Worker-Ende `canceled` um 12:35:08.207 UTC nach insgesamt 166358 ms. Der Auslöser des ersten Transportabbruchs ist ungeklärt. HTTP-`waitUntil()` bietet nur bis zu 30 Sekunden Nachlauf. R2 speichert Kontrollstände, führt keine Aufträge aus. Lange Browserunterbrechungen können weiterhin den laufenden Aufruf verlieren.
+
+Nächste Entwicklungsaufgabe: einen dauerhaft provisionierten Auftragsdienst anbinden und denselben vollständigen Auftrag nach mehr als 30 Sekunden Browserunterbrechung ohne weiteren bezahlten Aufruf im echten Hosting nachweisen. Die synchrone Kompatibilitätsroute `/api/run` muss dann ebenfalls denselben Auftragsdienst verwenden; sie ist noch nicht über Isolates hinweg idempotent.
+
+Details: [V1.2.11](docs/release-1.2.11.md), [Untersuchung](docs/investigation-2026-10-25.md), [ursprünglicher Befund](docs/incident-2026-10-25.md). Keine Löschung, Migration oder Neuverschlüsselung produktiver Benutzerdaten; MIDI-Kompatibilitätskennung unverändert.

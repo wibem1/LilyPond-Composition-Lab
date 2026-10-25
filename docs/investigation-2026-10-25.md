@@ -1,5 +1,7 @@
 # Abbruch langer Kompositionen – Untersuchung vom 25.10.2026
 
+Historischer Befund vor dem begrenzten Update V1.2.11. Aktuelle Veröffentlichung, Testergebnisse und weiterhin offene Hosting-Grenze: [V1.2.11](release-1.2.11.md) und [Projektstand](../PROJECT_STATE.md).
+
 ## Status
 Korrekturkandidat auf `fix/run-stale-timeout-20261025`; **kein Release 1.2.1**. Die vorhandene Version 1.2.0 wurde nicht verändert. Die notwendige browserunabhängige Auftragsausführung ist in der aktuellen Hosting-Konfiguration nicht eingerichtet und über die verfügbaren Verwaltungswerkzeuge nicht provisionierbar.
 
