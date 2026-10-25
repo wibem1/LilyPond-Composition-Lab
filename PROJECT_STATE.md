@@ -21,6 +21,12 @@ Stand: 25.10.2026 · **V1.2.11 als begrenztes Fehlerkorrektur-Update veröffentl
 - Noch offen: Produktions-Integration und Hosting-Deployment für V1.2.12; Release derzeit weiterhin gesperrt, bis identischer Code im Hosting getestet ist.
 - Nächster Schritt: den geladenen Quelltext und `LAB-SOURCE-TRACE` vergleichen, nachgewiesene Ursache beseitigen und die Tests erfolgreich ausführen.
 
+## Letzter Freigabekandidat (25.10.2026)
+
+- Entwicklungsstand **V1.2.12** in `src/app-config.mjs`, `package.json` und README; Versionsprüfung `tests/webapp.mjs` auf V1.2.12 aktualisiert (Commit `90cca1a`).
+- **GitHub Actions #40226416845: Erfolg** für `npm ci`, `npm run build`, sämtliche automatisierten Tests, `npm run validate` sowie echten Live-Hacklily-Test mit Sonnet-Original und pedalfreier Fassung.
+- **Keine produktive Veröffentlichung erfolgt**. Bereitstellung in der vorhandenen privaten ChatGPT-Site und nachfolgender Site-Smoke-Test sind weiterhin ausstehend; weder freigegebener Deploy noch erfolgreicher UI-/Player-Endtest behauptet.
+
 ## Quellen und Ziel
 
 Zentrale Standards: https://github.com/wibem1/AI-Development-Standards/blob/main/DEVELOPMENT_STANDARDS.md. Projektregeln: `AGENTS.md`.
