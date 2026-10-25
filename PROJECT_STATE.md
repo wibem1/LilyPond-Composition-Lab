@@ -14,6 +14,8 @@ Stand: 25.10.2026 · **V1.2.11 als begrenztes Fehlerkorrektur-Update veröffentl
 - Zusätzlich `tests/workflow-ui.mjs` um Test für zwei aufeinanderfolgende Compile-Klicks mit/ohne Pedalmarkierungen ergänzt (Commit `3c9f772`): erwartet geänderten Quelltext, verschiedene Run-IDs und kein altes Compilerprotokoll.
 - Tests hier nicht ausführbar: Repository-Klon im Container scheitert an fehlender DNS-Auflösung für GitHub; GitHub Actions-Läufe für den Zweig bisher nicht vorhanden. **Keine erfolgreiche Testausführung behaupten.**
 - Noch offen: Ausführung von Regressionstests und realer Hacklily-Integrationstest; keine Veröffentlichung, kein produktiver Deploy. V1.2.11 bleibt aktuell.
+- **Neuer gezielter Korrekturansatz (25.10.):** `src/compiler-diagnostics.mjs` erkennt ausschließlich den internen LilyPond-Fehler `programming error: bounds of this piece aren't breakable.`; `worker/index.js` verarbeitet die SVG/MIDI-Ausgaben bei diesem isolierten Layoutfehler weiter und zeigt eine sichtbare Warnung. Andere Compilerfehler bleiben blockiert (Commits `8f2ae0b`, `3289a20`). Regressionstest in `tests/compiler-diagnostics.mjs` (`89a956c`).
+- **Tatsächlich geprüft:** fünf isolierte JS-Prüfungen der direkt aus GitHub geladenen Klassifizierungsfunktion bestanden (positiver Fehlerfall, fehlendes SVG, fehlendes MIDI, zusätzlicher Fehler, Fehlerstatus). Keine vollständige npm-Testausführung und **kein echter Hacklily-Lauf mit Sonnet-Original**; keine Behauptung einer produktiven Freigabe.
 - Nächster Schritt: den geladenen Quelltext und `LAB-SOURCE-TRACE` vergleichen, nachgewiesene Ursache beseitigen und die Tests erfolgreich ausführen.
 
 ## Quellen und Ziel
