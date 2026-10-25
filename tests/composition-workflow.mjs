@@ -2,13 +2,8 @@ import assert from 'node:assert/strict';
 import {compositionMessages,ideaMessages,previewMessages,cleanGuidelines} from '../src/composition-workflow.mjs';
 import {readFile} from 'node:fs/promises';
 import worker from '../worker/index.js';
-class Bucket{
- constructor(){this.items=new Map();}
- async put(key,value,options={}){this.items.set(key,{bytes:typeof value==='string'?new TextEncoder().encode(value):new Uint8Array(value),customMetadata:options.customMetadata||{}});}
- async get(key){const item=this.items.get(key);if(!item)return null;return {body:item.bytes,json:async()=>JSON.parse(new TextDecoder().decode(item.bytes)),arrayBuffer:async()=>item.bytes.slice().buffer};}
- async delete(key){this.items.delete(key);}
- async list({prefix}){return {objects:[...this.items].filter(([key])=>key.startsWith(prefix)).map(([key,item])=>({key,customMetadata:item.customMetadata})),truncated:false};}
-}
+import {MemoryBucket as Bucket} from './fixtures/memory-bucket.mjs';
+
 const fixture=JSON.parse(await readFile(new URL('./fixtures/synthetic-piano-response.json',import.meta.url),'utf8')).result;
 let rendererDown=false,rendererCalls=0,failComposition=false,truncateConcept=false,paid=[],titles=0;
 class Socket extends EventTarget{accept(){}close(){}send(raw){const message=JSON.parse(raw);queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:message.id,result:fixture})})));}}

@@ -2,12 +2,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import worker from '../worker/index.js';
 import {RunClient} from '../src/run-client.mjs';
-class Bucket{
- constructor(){this.items=new Map();}
- async put(k,v,opts={}){this.items.set(k,{v,customMetadata:opts.customMetadata||{}});}
- async get(k){const e=this.items.get(k);return e?{body:e.v,json:async()=>JSON.parse(e.v)}:null;}
- async list({prefix}){return {objects:[...this.items].filter(([k])=>k.startsWith(prefix)).map(([key,e])=>({key,customMetadata:e.customMetadata})),truncated:false};}
-}
+import {MemoryBucket as Bucket} from './fixtures/memory-bucket.mjs';
+
 const env={BUCKET:new Bucket()},tasks=[];
 const fixture=JSON.parse(await readFile(new URL('fixtures/synthetic-piano-response.json',import.meta.url))).result;
 const prefix="\\version \"2.24.3\"\n\\header {title = \"Fragment\"}\nright = \\absolute { c'1 }\nleft = \\absolute { c4";
@@ -34,6 +30,6 @@ suffix='right = { c4 }';const rejected=await value('/api/run',{...completion,run
 suffix=' d4';finish='length';const again=await value('/api/run',{...completion,runId:'cc18000020261018aabbccddeeff0005'});assert(again.compiled.incomplete);assert.equal(again.answer,prefix+' d4');assert.equal(again.recoveryStages.length,1);
 suffix=" e4 f4 }\n\\score { { c'1 } \\midi {} \\layout {} }";finish='stop';const last=await value('/api/run',{...completion,historyId:again.historyId,code:again.answer,runId:'cc18000020261018aabbccddeeff0006'});assert(!last.compiled.incomplete);assert(last.answer.startsWith(prefix+' d4'));assert.equal(last.recoveryStages.length,2);assert.equal(last.costs.composition+last.costs.realisation,.03);
 providerError=true;const bad=await value('/api/run',{...input,runId:'cc18000020261018aabbccddeeff0007'});assert(bad.compiled.incomplete);assert.equal(bad.rawAnswer,prefix);providerError=false;
-const dead='cc18000020261018aabbccddeeff0008';await env.BUCKET.put('runs/'+dead+'.json',JSON.stringify({status:'running',updatedAt:new Date(Date.now()-100000).toISOString()}));await env.BUCKET.put('checkpoints/'+dead+'.json',JSON.stringify({input:{model:input.model,task:input.task,title:'Fragment'},response:{choices:[{message:{content:prefix}}],usage:{cost:.01}}}));const paidBeforeRestore=paid;const restored=await value('/api/run-status?runId='+dead);assert.equal(restored.status,'failed');assert.equal(restored.result.answer,prefix);assert.equal(restored.result.historyId,dead);assert.equal(paid,paidBeforeRestore);assert.equal((await value('/api/run-status?runId='+dead)).result.downloads[0].url,restored.result.downloads[0].url);
+const dead='cc18000020261018aabbccddeeff0008';await env.BUCKET.put('runs/'+dead+'.json',JSON.stringify({status:'running',updatedAt:new Date(Date.now()-670000).toISOString()}));await env.BUCKET.put('checkpoints/'+dead+'.json',JSON.stringify({input:{model:input.model,task:input.task,title:'Fragment'},response:{choices:[{message:{content:prefix}}],usage:{cost:.01}}}));const paidBeforeRestore=paid;const restored=await value('/api/run-status?runId='+dead);assert.equal(restored.status,'failed');assert.equal(restored.result.answer,prefix);assert.equal(restored.result.historyId,dead);assert.equal(paid,paidBeforeRestore);assert.equal((await value('/api/run-status?runId='+dead)).result.downloads[0].url,restored.result.downloads[0].url);
 const diag=await value('/api/diagnosis?runId='+last.runId);assert(diag.relatedRunIds.includes(again.runId));assert(diag.entries.some(x=>x.prefixUnchanged));assert(!JSON.stringify(diag).includes('sk-or-v1-TEST'));
 console.log('PASS: shipped generation/stream/status, 422 partial UI payload, exact append, original immutability, history/workspace/stages/costs, stale edits, duplicate definitions, repeated truncation, provider error and stale checkpoint recovery without paid retries.');

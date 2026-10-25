@@ -21,6 +21,7 @@ import {expressionPlayback} from '../src/expression-playback.mjs';
 import {musicXmlCapture,capturedMusic} from '../src/musicxml-capture.mjs';
 import {musicXmlScore} from '../src/musicxml-export.mjs';
 import {streamRun,readRunSession,noteRunProgress} from '../src/run-session.mjs';
+import {runStorage} from '../src/run-storage.mjs';
 const randomUUID=()=>crypto.randomUUID();
 const ENSEMBLE_PATTERNS=[
   {id:'violin',regex:/\b(?:violine|geige|violin)\b/i,label:'Violine'},
@@ -248,7 +249,7 @@ async function handle(req,env,ctx){
   const old=await getJson(env,'settings/soundfont.json');await env.BUCKET.delete('settings/soundfont.json');if(old?.key)try{await env.BUCKET.delete(old.key);}catch{}
   return json({name:'TimGM6mb',url:'/TimGM6mb.sf2',standard:true});
  }
- const runIO={read:name=>getJson(env,name),write:(name,data)=>putJson(env,name,data),log:(event,id,data)=>log(env,event,id,data),restore:id=>restorePartial(env,id)};
+ const runIO={...runStorage(env.BUCKET),log:(event,id,data)=>log(env,event,id,data),restore:id=>restorePartial(env,id)};
  if(req.method==='POST'&&p==='/api/run-stream'){
   const b=await body(req),id=historyId(b.runId);if(!id)return json({error:'Ungültige Auftragskennung.'},400);
   const copy=new Request(req.url,{method:'POST',headers:req.headers,body:JSON.stringify(b)});

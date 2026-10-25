@@ -1,6 +1,6 @@
-# LilyPond Composition Lab · V1.2.0
+# LilyPond Composition Lab · V1.2.11
 
-Private WebApp für Computer, iPad und Android. Auftrag → KI → editierbarer LilyPond-Notentext → Partitur, Wiedergabe und Export. Veröffentlichungsdatum: 18.10.2026.
+Private WebApp für Computer, iPad und Android. Auftrag → KI → editierbarer LilyPond-Notentext → Partitur, Wiedergabe und Export. Versionsdatum: 25.10.2026.
 
 ## Arbeiten mit der App
 
@@ -45,6 +45,12 @@ Die automatisierten Programme prüfen unter anderem direkte und zweistufige Komp
 Details zur Wiederherstellung und zu den Tests: [Wiederherstellung](docs/composition-recovery.md).
 
 Bedienung und Datenfluss der allgemeinen Bearbeitungen: [Überarbeiten und Korrigieren](docs/release-1.2.md).
+
+## V1.2.11 · Fehlerkorrekturen und bekannte Grenze
+
+Diese Version enthält die geprüften Korrekturen für Streaming-Sicherungen, Auftragsreservierung und Wiederherstellung. Nach längeren Browserunterbrechungen ist die vollständige Weiterverarbeitung weiterhin nicht gewährleistet. Deshalb während langer Kompositionen die App geöffnet und verbunden lassen. Diese Einschränkung wird auch in der Oberfläche angezeigt.
+
+[Änderungen und Prüfung](docs/release-1.2.11.md). Der noch fehlende dauerhafte Auftragsdienst bleibt eine eigene offene Aufgabe; siehe [Untersuchung vom 25.10.2026](docs/investigation-2026-10-25.md).
 
 ## Dienste und Veröffentlichung
 

@@ -7,7 +7,7 @@ const response=await streamRun(new Request('https://test/api/run-stream'),{}, {w
 const reader=response.body.getReader();assert((new TextDecoder().decode((await reader.read()).value)).includes('started'));await reader.cancel();release();await Promise.all(tasks);
 assert.equal(calls,1);assert.equal((await readRunSession(id,io)).result.answer,'Saved result');assert(logs.some(e=>e.event==='verbindung_getrennt'));assert(logs.some(e=>e.event==='lauf_abgeschlossen'));
 const duplicate=await streamRun(new Request('https://test/api/run-stream'),{}, {},id,()=>{calls++;},io);assert((await duplicate.json()).resume);assert.equal(calls,1,'reconnection never calls AI again');
-items.set('runs/dead1234.json',{runId:'dead1234',status:'running',phase:'KI komponiert',updatedAt:new Date(Date.now()-100000).toISOString()});assert.equal((await readRunSession('dead1234',io)).status,'interrupted');assert(logs.some(e=>e.event==='lauf_unterbrochen'&&e.lastPhase==='KI komponiert'));
+items.set('runs/dead1234.json',{runId:'dead1234',status:'running',phase:'KI komponiert',updatedAt:new Date(Date.now()-670000).toISOString()});assert.equal((await readRunSession('dead1234',io)).status,'interrupted');assert(logs.some(e=>e.event==='lauf_unterbrochen'&&e.lastPhase==='KI komponiert'));
 console.log('PASS: disconnected response still saves result; duplicate run ID returns saved status without executing; stale server session explicitly diagnosed.');
 const storage=()=>{const map=new Map();return {getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v)};};
 const saved={runId:id,answer:'Saved result'};let starts=0,polls=0;const reported=[];
@@ -24,5 +24,16 @@ let concurrentCalls=0,unlock;const block=new Promise(r=>unlock=r),raceTasks=[];
 const concurrentId='dd18000020261018aabbccddeeff0001';
 const start=()=>streamRun(new Request('https://test/run'),{},{waitUntil:p=>raceTasks.push(p)},concurrentId,async()=>{concurrentCalls++;await block;return Response.json({answer:'Once'});},io);
 const [one,two]=await Promise.all([start(),start()]);assert((await two.json()).resume);unlock();await one.text();await Promise.all(raceTasks);assert.equal(concurrentCalls,1);
-const absent=new RunClient({fetch:async url=>Response.json(url.startsWith('/api/run-status')?{status:'unknown'}:{saved:true}),storage:storage(),delay:async()=>{}});absent.write('lilypond-pending-run',{runId:concurrentId});await assert.rejects(absent.recover(),/nicht bestätigt/);assert.equal(absent.pendingRunId,'');
-console.log('PASS: concurrent same-runtime requests execute once; confirmed missing run clears pending marker without automatic resubmission.');
+const absent=new RunClient({fetch:async url=>Response.json(url.startsWith('/api/run-status')?{status:'unknown'}:{saved:true}),storage:storage(),delay:async()=>{}});absent.write('lilypond-pending-run',{runId:concurrentId});await assert.rejects(absent.recover(),/nicht bestätigt/);assert.equal(absent.pendingRunId,concurrentId);
+console.log('PASS: concurrent same-runtime requests execute once; unconfirmed run retains its pending marker and cannot start a new paid request.');
+for(const badStatus of [{status:'unexpected'},{status:'completed'}]){
+let invalidPolls=0;
+const invalid=new RunClient({fetch:async url=>{
+ if(url==='/api/client-events')return Response.json({saved:true});
+ invalidPolls++;return Response.json(badStatus);
+},storage:storage(),delay:async()=>{}});
+invalid.write('lilypond-pending-run',{runId:id});
+await assert.rejects(invalid.recover(),/weiterhin nicht erreichbar/);
+assert.equal(invalidPolls,20);assert.equal(invalid.pendingRunId,id);
+}
+console.log('PASS: malformed status responses pause recovery after 20 attempts and retain the pending run for reload.');
