@@ -46,6 +46,10 @@ Details zur Wiederherstellung und zu den Tests: [Wiederherstellung](docs/composi
 
 Bedienung und Datenfluss der allgemeinen Bearbeitungen: [Überarbeiten und Korrigieren](docs/release-1.2.md).
 
+## Entwicklungsstand 25.10.2026
+
+V1.2.1 ist wegen einer nachgewiesenen Hosting-Laufzeitgrenze noch nicht freigegeben. Die Korrekturen auf PR #1 sind lokal geprüft; ein laufender Provideraufruf überlebt einen längeren Browserabbruch damit noch nicht zuverlässig. Befund und fehlender dauerhafter Auftragsdienst: [Untersuchung vom 25.10.2026](docs/incident-2026-10-25.md).
+
 ## Dienste und Veröffentlichung
 
 Die Komposition verwendet OpenRouter. Notensatz, MIDI und MusicXML verwenden den Online-Compiler von Hacklily. Der private Sites-Datenspeicher hält Verlauf, Dateien und verschlüsselte Schlüssel. Verbindungsprüfung und Kompilierung starten keine kostenpflichtige KI-Komposition. Ein App-Icon mit eigenständiger Darstellung wird per Web-App-Installation unterstützt; Internet bleibt erforderlich.

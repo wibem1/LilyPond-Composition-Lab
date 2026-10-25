@@ -33,7 +33,10 @@ export class RunClient{
   this.record(runId,'recovery_started');let missing=0,failures=0;
   for(;;){
    try{
-    await this.flush();const r=await this.bounded('/api/run-status?runId='+encodeURIComponent(runId));if(!r.ok)throw Error('Statusabfrage HTTP '+r.status);const job=await r.json();failures=0;
+    await this.flush();const r=await this.bounded('/api/run-status?runId='+encodeURIComponent(runId));if(!r.ok)throw Error('Statusabfrage HTTP '+r.status);const job=await r.json();
+    if(!job||!['completed','failed','interrupted','unknown','running'].includes(job.status))throw Error('Ungültiger Auftragsstatus.');
+    if(['completed','failed'].includes(job.status)&&(!job.result||typeof job.result!=='object'))throw Error('Gespeichertes Auftragsergebnis fehlt.');
+    failures=0;
     if(job.status==='completed'||job.status==='failed'){this.record(runId,'recovery_completed',job.status);await this.flush();return this.finish(job.httpStatus||200,job.result);}
     if(job.status==='interrupted'){this.record(runId,'recovery_stopped','Serververarbeitung unterbrochen; kein neuer KI-Aufruf.');await this.flush();this.write(PENDING,null);throw Object.assign(Error('Serververarbeitung unterbrochen. Bereits erzeugte Komposition im Verlauf erhalten; siehe Diagnose.'),{terminal:true});}
     if(job.status==='unknown'){if(++missing>=5){this.write(PENDING,null);throw Object.assign(Error('Auftrag konnte nicht bestätigt werden. Es wurde kein automatischer neuer KI-Aufruf gestartet.'),{terminal:true});}this.onprogress('Auftragsstatus wird geprüft …');}

@@ -28,3 +28,17 @@ assert.equal(scoreCompleteness({elements:[staff('RH',54),staff('LH','108/2')]}).
 assert.throws(()=>scoreCompleteness({elements:[staff('RH',54),staff('LH','39/4')]}),/ungleich lang/);
 assert.throws(()=>scoreCompleteness({elements:[staff('empty',0)]}),/keine verlässlich/);
 console.log('PASS: resolved rational staff durations detect a prematurely ended hand even in syntactically complete LilyPond.');
+// A short delta arriving shortly after the first save must be checkpointed
+// even when the provider then goes silent (e.g. prolonged model reasoning).
+let idleController;const idleSaved=[];
+const idleResponse=new Response(new ReadableStream({start(c){idleController=c;}}),{headers:{'Content-Type':'text/event-stream'}});
+const idleRead=readCompositionResponse(idleResponse,{checkpoint:async value=>idleSaved.push(structuredClone(value))});
+idleController.enqueue(new TextEncoder().encode(event({choices:[{delta:{content:'first'}}]})));
+while(!idleSaved.length)await new Promise(r=>setTimeout(r,1));
+idleController.enqueue(new TextEncoder().encode(event({choices:[{delta:{content:' small tail'}}]})));
+const deadline=Date.now()+4000;
+while(!idleSaved.some(x=>x.choices[0].message.content==='first small tail')&&Date.now()<deadline)await new Promise(r=>setTimeout(r,10));
+const persistedWhileIdle=idleSaved.some(x=>x.choices[0].message.content==='first small tail');
+idleController.close();await idleRead;
+assert(persistedWhileIdle,'short tail is saved before another provider event or stream close');
+console.log('PASS: received short tail is checkpointed during provider silence.');

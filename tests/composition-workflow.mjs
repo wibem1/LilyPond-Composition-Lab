@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import worker from '../worker/index.js';
 class Bucket{
  constructor(){this.items=new Map();}
- async put(key,value,options={}){this.items.set(key,{bytes:typeof value==='string'?new TextEncoder().encode(value):new Uint8Array(value),customMetadata:options.customMetadata||{}});}
+ async put(key,value,options={}){if(options.onlyIf?.get('If-None-Match')==='*'&&this.items.has(key))return null;this.items.set(key,{bytes:typeof value==='string'?new TextEncoder().encode(value):new Uint8Array(value),customMetadata:options.customMetadata||{}});return {etag:'mock'};}
  async get(key){const item=this.items.get(key);if(!item)return null;return {body:item.bytes,json:async()=>JSON.parse(new TextDecoder().decode(item.bytes)),arrayBuffer:async()=>item.bytes.slice().buffer};}
  async delete(key){this.items.delete(key);}
  async list({prefix}){return {objects:[...this.items].filter(([key])=>key.startsWith(prefix)).map(([key,item])=>({key,customMetadata:item.customMetadata})),truncated:false};}

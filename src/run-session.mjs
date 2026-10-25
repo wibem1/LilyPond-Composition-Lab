@@ -1,5 +1,6 @@
 // Keep the HTTP body active, persist results, and never repeat a paid request
-// merely because a browser reconnects. Runtime termination remains detectable.
+// merely because a browser reconnects. waitUntil is limited to 30 seconds
+// after disconnect on Workers; this is NOT durable background execution.
 const active=new Map();
 const starting=new Set();
 export function noteRunProgress(runId,event,data){
@@ -26,6 +27,11 @@ export async function streamRun(request,env,ctx,runId,execute,io){
  starting.add(runId);
  let existing;try{existing=await readRunSession(runId,io);}catch(e){starting.delete(runId);throw e;}
  if(existing){starting.delete(runId);return Response.json({runId,resume:true},{headers:{'Cache-Control':'no-store'}});}
+ // The in-memory guards above cover one isolate only. Reserve in persistent
+ // storage before any provider work, and fail closed if storage is unavailable.
+ try{
+  if(io.claim&&!await io.claim(runId)){starting.delete(runId);return Response.json({runId,resume:true},{headers:{'Cache-Control':'no-store'}});}
+ }catch(e){starting.delete(runId);throw e;}
  let controller,cancelled=false;
  const state={runId,status:'running',phase:'Verbindung und Compiler werden geprüft',startedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
  let writes=Promise.resolve();

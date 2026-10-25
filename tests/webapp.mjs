@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import worker from '../worker/index.js';
 class MemoryBucket{
  constructor(){this.items=new Map()}
- async put(key,value,opts={}){const data=typeof value==='string'?new TextEncoder().encode(value):new Uint8Array(value);this.items.set(key,{data,customMetadata:opts.customMetadata||{}})}
+ async put(key,value,opts={}){if(opts.onlyIf?.get('If-None-Match')==='*'&&this.items.has(key))return null;const data=typeof value==='string'?new TextEncoder().encode(value):new Uint8Array(value);this.items.set(key,{data,customMetadata:opts.customMetadata||{}});return {etag:'mock'}}
  async get(key){const o=this.items.get(key);if(!o)return null;return {body:o.data,async json(){return JSON.parse(new TextDecoder().decode(o.data))}}}
  async delete(key){this.items.delete(key)}
  async list({prefix}){return {objects:[...this.items].filter(([k])=>k.startsWith(prefix)).map(([key,o])=>({key,customMetadata:o.customMetadata})),truncated:false}}
@@ -376,7 +376,7 @@ compositionFinish='length';const cutRevision=await value('/api/run',{method:'POS
 musicXmlLogs='LABXML-BEGIN'+JSON.stringify({len:54,elements:[{name:'ContextSpeccedMusic','context-type':'Staff','create-new':true,len:54},{name:'ContextSpeccedMusic','context-type':'Staff','create-new':true,len:9}]})+'LABXML-END';const unequal=await value('/api/run',{method:'POST',data:{...reviseInput,operation:'correct',runId:'ab12000020261018aabbccddeeff0007'}});assert(unequal.compiled.incomplete);assert(unequal.compiled.error.includes('ungleich lang'));assert.deepEqual((await value('/api/history/'+correctionOriginal.id)).entry,revisionBaseline.entry);musicXmlLogs='';
 console.log('PASS: general revision and self-directed correction submit one paid request; task reuse versus explicit ignoring, original/history/metadata/costs, empty automatic task, invalid and stale inputs, truncation and unequal staff lengths.');
 const interruptedRevision='ab12000020261018aabbccddeeff0008';
-await env.BUCKET.put('runs/'+interruptedRevision+'.json',JSON.stringify({status:'running',updatedAt:new Date(Date.now()-100000).toISOString()}));
+await env.BUCKET.put('runs/'+interruptedRevision+'.json',JSON.stringify({status:'running',updatedAt:new Date(Date.now()-670000).toISOString()}));
 await env.BUCKET.put('checkpoints/'+interruptedRevision+'.json',JSON.stringify({input:{operation:'correct',model:'test/model',task:'',title:'Teststück',compositionReasoning:'high',originalHistoryId:correctionOriginal.id},response:{model:'actual/reviser',usage:{cost:.02},choices:[{message:{content:answer},finish_reason:'interrupted'}]}}));
 const beforeRestore=paid;const restoredRevision=await value('/api/run-status?runId='+interruptedRevision);assert.equal(paid,beforeRestore);assert(restoredRevision.result.compiled.incomplete);assert.equal(restoredRevision.result.revision.mode,'correct');assert.equal(restoredRevision.result.costs.composition,.03);assert.equal(restoredRevision.result.costs.realisation,.03);assert.equal(restoredRevision.result.correctionStages.at(-1).actualModel,'actual/reviser');assert.deepEqual((await value('/api/history/'+correctionOriginal.id)).entry,revisionBaseline.entry);
 console.log('PASS: interrupted general correction restores source, parent, model stage and realisation costs without starting another paid call.');
