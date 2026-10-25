@@ -1,5 +1,20 @@
 # Projektstand – LilyPond Composition Lab
-Stand: 25.10.2026 · **V1.2.12 auf bestehender privater Site bereitgestellt; interaktiver Endtest offen**
+Stand: 25.10.2026 · **V1.2.13 veröffentlicht; MusicXML-Export produktiv geprüft**
+
+
+## V1.2.13 · MusicXML-Export bei internem Layoutfehler · 25.10.2026
+
+- Nutzer bestätigt für V1.2.12: „Die alte Standuhr“ lässt sich laden und spielen; MusicXML-Speicherung schlägt fehl.
+- Fehler in Produktion reproduziert: `/api/export-musicxml` antwortete mit HTTP 422. Der getrennte Exportweg blockierte den bekannten LilyPond-internen Fehler `bounds of this piece aren't breakable`, obwohl die vollständige musikalische Struktur bereits vorhanden war.
+- Reale Compilerstruktur geprüft: Sonnet-Fixture, 32 Takte, zwei Klaviersysteme, 293 klingende Noten. Der MusicXML-Export benötigt die semantische Struktur, nicht das LilyPond-Seitenlayout.
+- Korrektur in `worker/index.js`: ausschließlich diesen Layoutfehler bei vorhandener vollständiger und exportierbarer Notenstruktur zulassen; sichtbaren Hinweis ausgeben. Andere Compiler-/Rendererfehler sowie fehlende oder beschädigte Strukturen bleiben blockiert. Exportfehler geben ihre Compilerdiagnose zurück und speichern sie im Diagnoseprotokoll.
+- Regressionen in `tests/webapp.mjs`: unveränderter XML-Inhalt im erlaubten Sonderfall, Warnhinweis, fehlende/beschädigte Struktur, zusätzlicher Syntaxfehler, unveränderter Arbeitsstand und keine bezahlten Modellaufrufe.
+- Build, **alle 27 Testprogramme** und Artefaktvalidierung auf V1.2.13 erfolgreich.
+- Bestehende private Site aktualisiert: https://lilypond-composition-lab.wibem1.chatgpt.site · Hosting-Quellcommit `5d217520ea132c4b38e21f4d738631e6ed4618a7`; Deploy `appgdep_6ade6b3bea008191832028d6eeb9ce4c`, Status `succeeded`, Runtime-Environment-Revision weiterhin **1**.
+- **Echter produktiver Export nach Update bestanden:** identisches Sonnet-Original an `/api/export-musicxml` → HTTP 200, `paidCalls:0`, 32 Takte, zwei Systeme, 293 klingende Noten. Download der tatsächlich gespeicherten MusicXML-Datei → HTTP 200; XML mit unabhängigem Python-Parser lesbar, Wurzel `score-partwise`, 32 Takte, 311 Notenelemente einschließlich Pausen, 69143 Bytes. Bekannter Layoutfehler wird als Hinweis ausgegeben; keine musikalische Änderung.
+- Datenprüfung vor/nach Bereitstellung: identische HTTP-200-Antwortprüfsummen für Arbeitsstand, Verlauf, Schlüsselstatus und SoundFont-Einstellung. Keine Migration, Löschung, Neuverschlüsselung oder kostenpflichtige KI-Anfrage.
+- Online-Startseitenantwort auf V1.2.13 kontrolliert. Der Download über die produktive API wurde geprüft; keine erneute Prüfung des angemeldeten Browser-Dialogs und kein manueller Import in MuseScore in dieser Umgebung.
+- Nächster Schritt: Nutzerprüfung des MusicXML-Buttons in der aktualisierten App. Die frühere separate Grenze bei langen Browserunterbrechungen bleibt bestehen.
 
 
 ## Produktionsbereitstellung V1.2.12 · 25.10.2026

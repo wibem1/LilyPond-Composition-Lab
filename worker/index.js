@@ -304,18 +304,23 @@ async function handle(req,env,ctx){
    logs=String(rendered.logs||'');
    const compilerLog=logs.replace(/LABXML-BEGIN.*?LABXML-END/gs,'');
    const diagnostics=compilerDiagnostics(compilerLog);
-   if(rendered.err||diagnostics.status==='error')throw Error('MusicXML-Export: LilyPond konnte den Notentext nicht fehlerfrei lesen. '+String(rendered.err||''));
+   // Export consumes the parsed music tree, not LilyPond's page layout or MIDI.
+   // Permit only this known engraving failure; capturedMusic/musicXmlScore below
+   // still require a complete, valid and exportable semantic tree.
+   const layoutRecovered=!rendered.err&&diagnostics.errors.length>0&&diagnostics.errors.every(line=>/programming error: bounds of this piece aren't breakable\./.test(line));
+   if(rendered.err||(diagnostics.status==='error'&&!layoutRecovered))throw Error('MusicXML-Export: LilyPond konnte den Notentext nicht fehlerfrei lesen. '+String(rendered.err||''));
    const title=compositionFilename(b.title||code.match(/\btitle\s*=\s*"([^"\n]+)"/)?.[1]||'Komposition');
    const composer=code.match(/\bcomposer\s*=\s*"([^"\n]*)"/)?.[1]||'';
    const result=musicXmlScore(capturedMusic(logs),{title,composer});
    const warnings=[...result.warnings,...diagnostics.warnings];
+   if(layoutRecovered)warnings.push('LilyPond meldete einen internen Fehler der Seitenaufteilung. MusicXML wurde aus der vollständig gelesenen Notenstruktur erstellt; das Zielprogramm setzt die Seiten neu.');
    if(/\\repeat\b/.test(code))warnings.push('Wiederholungen sind im MusicXML ausgeschrieben.');
    const url=await saveFile(env,title,'musicxml',result.xml);
    await log(env,'musicxml-export',runId,{source:code,url,stats:result.stats,warnings,paidCalls:0,durationMs:Date.now()-started});
    return json({url,label:'MusicXML',stats:result.stats,warnings,paidCalls:0});
   }catch(e){
-   const error=String(e.message||e);await log(env,'musicxml-export-fehler',runId,{error,paidCalls:0,durationMs:Date.now()-started});
-   return json({error,warnings:compilerDiagnostics(logs.replace(/LABXML-BEGIN.*?LABXML-END/gs,'')).warnings},422);
+   const error=String(e.message||e),diagnostics=compilerDiagnostics(logs.replace(/LABXML-BEGIN.*?LABXML-END/gs,''));await log(env,'musicxml-export-fehler',runId,{error,diagnostics,paidCalls:0,durationMs:Date.now()-started});
+   return json({error,diagnostics,warnings:diagnostics.warnings},422);
   }
  }
  if(req.method==='POST'&&p==='/api/compile-lilypond'){

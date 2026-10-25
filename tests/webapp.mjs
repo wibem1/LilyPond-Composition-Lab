@@ -30,7 +30,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('V1.2.12'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('V1.2.13'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -345,6 +345,21 @@ assert(xmlResponse.headers.get('Content-Disposition').includes('attachment'));
 assert((await xmlResponse.text()).includes('<score-partwise version="4.0">'));
 assert.equal(JSON.stringify(await value('/api/workspace')),workspaceBeforeXml);
 const exportDiagnosis=await value('/api/diagnosis?runId=abcde12345abcde12345');assert(exportDiagnosis.entries.some(e=>e.event==='musicxml-export'&&e.paidCalls===0));
+// Page engraving is independent of the complete parsed tree used by MusicXML.
+const layoutError="score.ly:246:16: programming error: bounds of this piece aren't breakable.";
+musicXmlLogs='LABXML-BEGIN'+xmlTree+'LABXML-END\n'+layoutError;
+const layoutXml=await value('/api/export-musicxml',{method:'POST',data:{code:xmlSource,title:'Layout recovery'}});
+assert.deepEqual(layoutXml.stats,exported.stats);assert(layoutXml.warnings.some(w=>w.includes('Seitenaufteilung')));
+const recoveredXml=await (await call(layoutXml.url)).text();
+assert.equal(recoveredXml,(await (await call(exported.url)).text()).replaceAll('Gänseliesel','Layout recovery'));
+musicXmlLogs=layoutError;
+assert.equal((await call('/api/export-musicxml',{method:'POST',data:{code:xmlSource}})).status,422,'layout error without tree stays blocked');
+musicXmlLogs='LABXML-BEGIN{bad}LABXML-END\n'+layoutError;
+assert.equal((await call('/api/export-musicxml',{method:'POST',data:{code:xmlSource}})).status,422,'malformed tree stays blocked');
+musicXmlLogs='LABXML-BEGIN'+xmlTree+'LABXML-END\n'+layoutError+'\nscore.ly:3: error: syntax error';
+const syntaxXml=await call('/api/export-musicxml',{method:'POST',data:{code:xmlSource}});
+assert.equal(syntaxXml.status,422);assert((await syntaxXml.json()).diagnostics.errors.some(e=>e.includes('syntax error')));
+assert.equal(JSON.stringify(await value('/api/workspace')),workspaceBeforeXml);assert.equal(paid,paidBeforeXml);
 musicXmlLogs='truncated';const failedXml=await call('/api/export-musicxml',{method:'POST',data:{code:xmlSource,title:'Fail'}});assert.equal(failedXml.status,422);assert.equal(paid,paidBeforeXml);
 assert.equal((await call('/api/export-musicxml',{method:'POST',data:{code:'\\score {{c4}} \\score {{d4}}'}})).status,422);
 console.log('PASS: shipped MusicXML API: exact compiler tree, downloadable XML MIME/filename, source/workspace/MIDI unchanged, diagnosis, no AI charges, explicit failure for missing/truncated structure.');
