@@ -14,3 +14,9 @@ https://github.com/wibem1/AI-Development-Standards/blob/main/DEVELOPMENT_STANDAR
 - Implementiert ≠ getestet ≠ in der Zielanwendung nachgewiesen; nie stillschweigend einen Freigabestatus annehmen.
 - **Nächster Schritt:** zunächst nur Bestandsaufnahme der neuesten nachprüfbaren technischen Ergebnisse und Auswahl **eines** kleinen Tests. Keine automatische neue Version oder GitHub-Actions-Schleife.
 - Nach einem abgeschlossenen Entwicklungsschritt diese Datei mit **konkreten Testnachweisen**, Blockern und der nächsten Einzelaufgabe aktualisieren.
+
+## 25.10.2026 – Diagnose zu abgebrochenem Gemini-Auftrag
+- Nutzerdiagnose v1.2.0, Lauf 80f91019ea8f486b992680af0b48049e: Browser-Stream brach ab (Load failed), die Statusabfrage stufte den Auftrag bereits nach 90 Sekunden ohne Aktualisierung als unterbrochen ein. Server-Ursache nicht nachgewiesen.
+- Isolierter **Korrekturkandidat** auf Branch `fix/run-stale-timeout-20261025`: Kennzeichnung als verwaist erst nach 11 Minuten ohne Server-Aktualisierung, also nach dem 10-Minuten-Limit des Provider-Streams. Damit wird ein möglicherweise noch laufender bezahlter Aufruf nicht voreilig als endgültig unterbrochen eingestuft.
+- Neuer Regressionstest `tests/run-stale-timeout.mjs` prüft 95 Sekunden und >11 Minuten mit simuliertem Speicher. **Noch nicht ausgeführt**, kein echter Hosting-/Browser-/Provider-Test. Weiterhin offene Frage: Warum brach die Browser- oder Server-Verbindung ab? Durch das Zeitlimit allein nicht behoben.
+- **Nächster Einzelschritt:** Regressionstest lokal ausführen und anschließend gezielt Server-Streaming/Hosting-Laufzeit prüfen; erst bei nachgewiesener Fehlerbehebung Integration und Release.
