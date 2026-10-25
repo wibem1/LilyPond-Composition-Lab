@@ -16,6 +16,7 @@ Stand: 25.10.2026 · **V1.2.11 als begrenztes Fehlerkorrektur-Update veröffentl
 - Noch offen: Ausführung von Regressionstests und realer Hacklily-Integrationstest; keine Veröffentlichung, kein produktiver Deploy. V1.2.11 bleibt aktuell.
 - **Neuer gezielter Korrekturansatz (25.10.):** `src/compiler-diagnostics.mjs` erkennt ausschließlich den internen LilyPond-Fehler `programming error: bounds of this piece aren't breakable.`; `worker/index.js` verarbeitet die SVG/MIDI-Ausgaben bei diesem isolierten Layoutfehler weiter und zeigt eine sichtbare Warnung. Andere Compilerfehler bleiben blockiert (Commits `8f2ae0b`, `3289a20`). Regressionstest in `tests/compiler-diagnostics.mjs` (`89a956c`).
 - **Tatsächlich geprüft:** fünf isolierte JS-Prüfungen der direkt aus GitHub geladenen Klassifizierungsfunktion bestanden (positiver Fehlerfall, fehlendes SVG, fehlendes MIDI, zusätzlicher Fehler, Fehlerstatus). Keine vollständige npm-Testausführung und **kein echter Hacklily-Lauf mit Sonnet-Original**; keine Behauptung einer produktiven Freigabe.
+- **Verifizierter automatisierter Lauf:** GitHub Actions `40222594279` auf Commit `95afa36`: `npm ci`, `npm run build`, `npm test`, `npm run validate` alle erfolgreich; Workflow erfolgreich abgeschlossen. Realer Hacklily-Test mit Sonnet-Datei und App-Hosting-Integration noch ausstehend. **V1.2.12 bleibt unveröffentlicht.**
 - Nächster Schritt: den geladenen Quelltext und `LAB-SOURCE-TRACE` vergleichen, nachgewiesene Ursache beseitigen und die Tests erfolgreich ausführen.
 
 ## Quellen und Ziel
