@@ -5,6 +5,7 @@ const html=await readFile(new URL('../app/index.html',import.meta.url),'utf8');
 const app=await readFile(new URL('../app/app.mjs',import.meta.url),'utf8');
 const legacyPrompts=JSON.parse(await readFile(new URL('./fixtures/legacy-prompts.json',import.meta.url),'utf8'));
 const db={workspace:null,entries:[]},requests=[];
+let rememberedFont={standard:true,name:'Standard'};const customFontLoads=[];
 const midiFetches=[],playCalls=[],compileCalls=[];let compileFailure=false,duringCompile=null;const xmlCalls=[];let xmlFailure=false;let completionReply=null;
 const ideaStage={runId:'aaaa1111bbbb2222',model:'one/idea',actualModel:'actual/idea',quality:'balanced',cost:.01,durationMs:1000};
 const compositionStage={runId:'aaaa1111bbbb3333',model:'two/composer',actualModel:'actual/composer',quality:'short',cost:.02,durationMs:2000};
@@ -28,11 +29,11 @@ async function open(){
   if(path.startsWith('/download/')){midiFetches.push(path);return new Response(new Uint8Array([77,84,104,100]));}
   if(path==='/api/models')return Response.json({models:[{id:'one/idea',provider:'one',prompt:0,completion:0},{id:'two/composer',provider:'two',prompt:0,completion:0}]});
   if(path==='/api/key-status')return Response.json({stored:true,canStore:true});
-  if(path==='/api/soundfont')return Response.json({standard:true,name:'Standard'});
+  if(path==='/api/soundfont')return Response.json(rememberedFont);
   throw Error(path);
  };
- class Player{stop(){}setMasterVolume(){}async init(){this.sf={name:'Standard'};this.soundFontName='Standard';}loadMidi(){playCalls.push('load');}async play(){playCalls.push('play');}}
- class Cache{version(){return '';} }
+ class Player{stop(){}setMasterVolume(){}async init(){if(rememberedFont.standard){this.sf={name:'Standard'};this.soundFontName='Standard';}}async loadSoundFontBuffer(buffer,name){customFontLoads.push({name,bytes:buffer.byteLength});this.sf={name};this.soundFontName=name;}loadMidi(){playCalls.push('load');}async play(){playCalls.push('play');}}
+ class Cache{version(font){return font.savedAt+'|'+font.bytes;}async prepare(){return new Blob([new Uint8Array(8)]);} }
  class Client{constructor(){this.pendingRunId='';}record(){}async flush(){}async start(input){requests.push(structuredClone(input));if((input.operation==='revise'||input.operation==='correct')&&completionReply)return structuredClone(completionReply);if(input.operation==='concept')return {operation:'concept',workflow:'concept',historyId:'aaaa1111cccc2222',runId:ideaStage.runId,title:input.title,task:input.task,system:input.system,compositionModel:input.model,compositionReasoning:input.compositionReasoning,tokens1:input.maxTokens,draft:'Eine ruhige, kontrastreiche Idee.',ideaStage,compositionStage:null,costs:{composition:.01,realisation:0},pages:[],downloads:[],midiUrl:''};return {workflow:'concept',historyId:input.historyId,runId:compositionStage.runId,title:'Ausgearbeitetes Stück',task:input.task,system:input.system,compositionModel:input.model,compositionReasoning:input.compositionReasoning,tokens1:input.maxTokens,draft:input.draft,ideaStage,compositionStage,costs:{composition:.03,realisation:0},answer:'LilyPond-Quelltext',compiled:{url:'/download/test.mid',pages:[],rangeCheck:{status:'passed'}},downloads:[],usage:{prompt_tokens:100,completion_tokens:200},durationMs:3000};}}
  const document={getElementById:id=>{const element=elements.get(id);assert(element,'Missing HTML element '+id);return element;},createElement:()=>new Element('created'),querySelector:()=>new Element('meta')};
  const window={addEventListener(){}};const context=vm.createContext({document,window,navigator:{onLine:true},location:{href:''},fetch,Response,URL,Blob,crypto,console,Option:class{constructor(text,value){Object.assign(this,{text,value});}},matchMedia:()=>({matches:false}),requestAnimationFrame:fn=>fn(),setTimeout,clearTimeout});
@@ -131,3 +132,14 @@ ui.get('new').onclick();ui.get('workflow').value='concept';ui.get('workflow').on
 const beforeIdeas=requests.length;await Promise.all([ui.get('compose').onclick(),ui.get('compose').onclick()]);
 assert.equal(requests.length,beforeIdeas+1,'double click starts one paid idea');
 console.log('PASS: rapid double clicks lock before awaiting storage and start exactly one composition or idea request.');
+
+
+// The saved server selection is restored and passed to the player on every reopen.
+rememberedFont={name:'Mein zuletzt geladener Flügel.sf2',savedAt:'saved-font-version',bytes:8,url:'/api/soundfont/file'};
+db.workspace={title:'Gespeichertes Stück',techout:'source',midiUrl:'/download/saved.mid',midiTimingPolicy:'independent-voices-v1'};
+for(let reopening=0;reopening<2;reopening++){
+ ui=await open();assert(ui.get('playerStatus').textContent.includes(rememberedFont.name));
+ await ui.get('play').onclick();assert(ui.get('playerStatus').textContent.includes(rememberedFont.name));
+}
+assert.equal(customFontLoads.length,2);assert(customFontLoads.every(f=>f.name===rememberedFont.name&&f.bytes===8));
+console.log('PASS: app reopens twice with saved custom SoundFont metadata and loads exactly that bank for playback without selecting a file again.');

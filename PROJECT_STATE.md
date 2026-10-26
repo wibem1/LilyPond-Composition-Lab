@@ -1,5 +1,15 @@
 # Projektstand – LilyPond Composition Lab
-Stand: 26.10.2026 · V1.2.15 veröffentlicht
+Stand: 26.10.2026 · V1.2.16 veröffentlicht
+
+
+## V1.2.16 · SoundFont auf Safari und Wiederherstellung
+
+- Ausgangsstand: GitHub `980375c73e7012af19c79aca34dff4d0e13eb1d9`, Branch `audit/code-review-20261026`.
+- Nutzer meldet auf iPad: `Can only call Window.fetch on instances of Window` beim Vorladen des gespeicherten SoundFonts.
+- Ursache durch neuen Regressionstest vor Korrektur reproduziert: native Fetch-Funktion wurde als Methode des Cacheobjekts aufgerufen. Korrektur: Standard-Fetch ruft `globalThis.fetch` mit dem richtigen Empfänger auf. Injizierte Test-/Spezial-Fetcher bleiben möglich.
+- Produktions-Lesetest nach Deploy: Startseite und Versionsmodul zeigen V1.2.16; Arbeitsstand, Verlauf, Schlüsselstatus und SoundFont-Auswahl vor/nach Deploy HTTP 200 mit identischen SHA-256-Prüfsummen. Keine produktiven Nutzerdaten geschrieben.
+- SoundFont-Metadaten und Datei werden bereits serverseitig gespeichert; der Fehler verhinderte das anschließende Vorladen. Dieser Speicherweg bleibt erhalten. Tests prüfen Wiederöffnung mit/ohne lokalen Cache sowie zweimaliges Wiederöffnen der App mit demselben gespeicherten benannten SoundFont und Übergabe an den Player.
+- Gezielte Cache-/UI-Regressionen und vollständige Releaseprüfung bestanden: Build, alle 28 Testprogramme, Artefaktvalidierung und Diff-Prüfung. Veröffentlicht: Hosting-Quellcommit `2a62345c13251cb08a0635c17e6e4334046e8680`, Deploy `appgdep_6adf0595337881918fe427d50e3adfcf`, Status `succeeded`, Runtime-Revision weiterhin 1. Keine neue Datenmigration oder kostenpflichtige KI-Anfrage. Kein echter iPad-Safari-/Hörtest.
 
 ## Verbindliche Quellen
 
@@ -12,7 +22,7 @@ Stand: 26.10.2026 · V1.2.15 veröffentlicht
 
 - V1.2.13: MusicXML-Export akzeptiert den isolierten internen LilyPond-Seitenaufteilungsfehler nur bei vollständiger exportierbarer Notenstruktur; andere Compilerfehler bleiben blockiert.
 - Nutzer bestätigt Laden und Wiedergabe der alten Standuhr unter V1.2.12. Für V1.2.13 ist der produktive API-Export nachgewiesen: HTTP 200, zwei Systeme, 32 Takte, 293 klingende Noten; XML unabhängig geparst. Kein erneuter manueller Browser-Download oder MuseScore-Import nachgewiesen.
-- Zuletzt veröffentlichter Hosting-Quellcommit: `b063438e14f8e345d0b132863e76776861308e2c`; Deploy `appgdep_6adf036618d4819193511ebb1684a9f8` erfolgreich; Runtime-Environment-Revision 1.
+- Zuletzt veröffentlichter Hosting-Quellcommit: `2a62345c13251cb08a0635c17e6e4334046e8680`; Deploy `appgdep_6adf0595337881918fe427d50e3adfcf` erfolgreich; Runtime-Environment-Revision 1.
 - Arbeitsstand, Verlauf, Schlüsselstatus und SoundFont-Einstellung vor/nach Deployment mit identischen Antwortprüfsummen. Keine Datenmigration oder kostenpflichtige KI-Anfrage.
 
 ## Codebereinigung vom 26.10.2026
