@@ -1,5 +1,5 @@
 # Projektstand – LilyPond Composition Lab
-Stand: 26.10.2026 · V1.2.13 veröffentlicht; Codebereinigung separat geprüft
+Stand: 26.10.2026 · V1.2.14 veröffentlicht
 
 ## Verbindliche Quellen
 
@@ -17,19 +17,20 @@ Stand: 26.10.2026 · V1.2.13 veröffentlicht; Codebereinigung separat geprüft
 
 ## Codebereinigung vom 26.10.2026
 
-Separater Branch `refactor/cleanup-1.2.13`, weiterhin Versionskennung 1.2.13; keine neue Veröffentlichung.
+Separater Branch `refactor/cleanup-1.2.13`, Versionskennung auf ausdrücklichen Nutzerauftrag auf 1.2.14 angehoben; Build, alle 27 Testprogramme und Artefaktprüfung unter V1.2.14 bestanden.
 
 - Doppelte Erkennung des internen Layoutfehlers in einer gemeinsamen Funktion zusammengeführt. Wiedergabe verlangt weiterhin SVG und MIDI; MusicXML verlangt weiterhin eine vollständige semantische Struktur.
 - Wiederholte Umwandlung von MIDI-Bytebereichen für den gemeinsamen Parser vereinheitlicht. Keine Änderung des MIDI-Parsers oder der Kompatibilitätskennung.
 - Erneute Analyse desselben Compilerprotokolls beim abschließenden Layoutcheck vermieden.
 - Diese Projektstanddatei auf den aktuellen Stand gekürzt; die vollständige bisherige Dokumentation einschließlich aller historischen Nachweise bleibt in `docs/project-state-through-1.2.13.md` erhalten.
-- Lokal erfolgreich: Build, alle 27 Testprogramme einschließlich Worker-/workerd-, UI-/Player- und MusicXML-Regressionen sowie Artefaktvalidierung. Renderer und Anbieter in den automatisierten Tests simuliert; kein neuer Live-Hacklily-Test, keine kostenpflichtigen KI-Aufrufe, keine produktiven Datenänderungen.
+- Lokal erfolgreich: Build, alle 27 Testprogramme einschließlich Worker-/workerd-, UI-/Player- und MusicXML-Regressionen sowie Artefaktvalidierung. Renderer und Anbieter in den automatisierten Tests simuliert; kein abgeschlossener neuer Live-Hacklily-Test (automatische Sicherheitsprüfung blockierte die Übertragung der Testkomposition an den externen Renderer), keine kostenpflichtigen KI-Aufrufe, keine produktiven Datenänderungen.
 - Abhängigkeiten aus der vorhandenen V1.2.13-Arbeitskopie übernommen, nachdem der Offline-Installationscache unvollständig war; Lockdatei unverändert.
 
 ## Offene Grenzen und nächster Schritt
 
 - Lange Browserunterbrechungen: HTTP-Worker kann nach 30 Sekunden Nachlauf beendet werden. R2 speichert Kontrollstände, führt Aufträge aber nicht weiter aus. Vollständige Entkopplung benötigt einen dauerhaften Auftragsdienst; auch die synchrone Route `/api/run` ist noch nicht über Isolates hinweg idempotent.
 - Interaktive Endabnahme mit angemeldetem Browser sowie Hörprüfung bleiben offen. Automatisierte Prüfungen ersetzen sie nicht.
-- Nächster einzelner Schritt: geprüfte Codebereinigung zur Übernahme bereitstellen; eine Veröffentlichung wurde in diesem Auftrag nicht vorgenommen.
+- V1.2.14 veröffentlicht: Hosting-Quellcommit `722f727a6bcc3dec58682bff10456d19d5d20d00`, Deploy `appgdep_6adefc0c3f848191a7bbfb520bca9483`, Status `succeeded`, Runtime-Revision 1. Bestehender privater Zugriff und Speicherbindung unverändert. Kein neuer Browser-Endtest.
+- Nächster einzelner Schritt: Nutzerprüfung der veröffentlichten V1.2.14.
 
 Historie und Einzelbelege: [bisheriger Projektstand](docs/project-state-through-1.2.13.md), [Streaming-Untersuchung](docs/investigation-2026-10-25.md), [V1.2.11](docs/release-1.2.11.md).

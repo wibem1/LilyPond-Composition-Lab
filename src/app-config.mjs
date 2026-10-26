@@ -1,4 +1,4 @@
 // Shared release identity and compatibility contract.
-export const APP_VERSION='1.2.13';
-export const RELEASE_DATE='25.10.2026';
+export const APP_VERSION='1.2.14';
+export const RELEASE_DATE='26.10.2026';
 export const MIDI_TIMING_POLICY='independent-voices-v1';
