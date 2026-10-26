@@ -29,3 +29,20 @@ assert.equal((await unavailable.prepare(font)).size,8);assert(warnings.includes(
 await assert.rejects(new SoundFontCache({storage,fetcher:async()=>new Response(bytes.slice(0,4))}).prepare({...font,savedAt:'short'}),/unvollständig/);
 assert.notEqual(items.get(delayed.key).headers.get('X-Lab-Font-Version'),'short|8');
 console.log('PASS: fresh app uses exact locally cached font without network; local selection seeds cache; version changes, progress, shared download, stale preload, quota failure and truncated response handled.');
+
+// WebKit requires Window as the receiver; injected arrow mocks missed this bug.
+const nativeFetch=globalThis.fetch;let nativeCalls=0;
+try{
+ globalThis.fetch=async function(url){
+  if(this!==globalThis)throw new TypeError('Can only call Window.fetch on instances of Window');
+  nativeCalls++;assert.equal(url,font.url);return new Response(bytes);
+ };
+ items.clear();
+ await new SoundFontCache({storage}).prepare(font);
+ assert.equal(nativeCalls,1);
+ // Closing/reopening restores the same saved selection from the device cache.
+ await new SoundFontCache({storage}).prepare(font);assert.equal(nativeCalls,1);
+ // If device storage was cleared, the saved server selection is downloaded again.
+ items.clear();await new SoundFontCache({storage}).prepare(font);assert.equal(nativeCalls,2);
+}finally{globalThis.fetch=nativeFetch;}
+console.log('PASS: default fetch uses the browser global receiver; saved font restores after reopen with and without device cache.');

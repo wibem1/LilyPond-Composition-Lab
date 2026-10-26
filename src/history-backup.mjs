@@ -3,7 +3,7 @@ const FORMAT='LilyPond-Composition-Lab.backup',MAX_BYTES=24*1024*1024;
 const encoder=new TextEncoder();
 const encode=bytes=>{let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(s);};
 const decode=value=>Uint8Array.from(atob(value),c=>c.charCodeAt(0));
-const validId=v=>/^[a-f0-9]{16,40}$/.test(String(v||''));
+const validId=v=>typeof v==='string'&&/^[a-f0-9]{16,40}$/.test(v);
 const fileUrl=v=>typeof v==='string'&&/^\/download\/[^/]+$/.test(v);
 function refs(entry){return [...(entry.downloads||[]),...(entry.pages||[]),{url:entry.midiUrl}].map(x=>x?.url).filter(fileUrl);}
 function runIds(entry){return [entry.runId,entry.ideaStage?.runId,entry.compositionStage?.runId,...(entry.correctionStages||[]).map(s=>s.runId),...(entry.recoveryStages||[]).map(s=>s.runId)].filter(validId);}
@@ -18,12 +18,24 @@ export async function exportHistory(io){
  for(const runId of new Set(all.flatMap(runIds))){const logs=await io.logs(runId);bytes+=encoder.encode(JSON.stringify(logs)).length;if(bytes>MAX_BYTES)throw Error('Der Verlauf ist für eine einzelne Sicherungsdatei zu groß (24 MB).');diagnostics.push({runId,entries:logs});}
  return {format:FORMAT,version:1,createdAt:new Date().toISOString(),entries,workspace,artifacts,diagnostics};
 }
+function validateEntry(entry){
+ const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
+ if(!object(entry))throw Error('Ungültiger Arbeitsstand in der Sicherung.');
+ for(const field of ['createdAt','updatedAt'])if(entry[field]!=null&&(typeof entry[field]!=='string'||!Number.isFinite(Date.parse(entry[field]))))throw Error('Ungültiges Datum in der Sicherung.');
+ for(const field of ['downloads','pages']){
+  if(entry[field]!==undefined&&(!Array.isArray(entry[field])||entry[field].some(d=>!object(d)||!fileUrl(d.url)||typeof d.label!=='string')))throw Error('Ungültige Ergebnisverweise in der Sicherung.');
+ }
+ if(entry.midiUrl&&!fileUrl(entry.midiUrl))throw Error('Ungültiger MIDI-Verweis in der Sicherung.');
+ for(const field of ['ideaStage','compositionStage'])if(entry[field]!=null&&!object(entry[field]))throw Error('Ungültiger Kompositionsschritt in der Sicherung.');
+ for(const field of ['correctionStages','recoveryStages'])if(entry[field]!==undefined&&(!Array.isArray(entry[field])||entry[field].some(s=>!object(s))))throw Error('Ungültige Kompositionsschritte in der Sicherung.');
+}
 export async function importHistory(data,io){
  if(!data||data.format!==FORMAT||data.version!==1||!Array.isArray(data.entries)||data.entries.length>2000||!data.artifacts||typeof data.artifacts!=='object'||Array.isArray(data.artifacts)||!Array.isArray(data.diagnostics))throw Error('Keine gültige LilyPond-Verlaufssicherung.');
  if(encoder.encode(JSON.stringify(data)).length>MAX_BYTES)throw Error('Sicherungsdatei zu groß (24 MB).');
  const entries=data.entries;
  if(entries.some(e=>!e||!validId(e.id)||typeof e.techout!=='string'||typeof e.draft!=='string')||new Set(entries.map(e=>e.id)).size!==entries.length)throw Error('Ungültige Kompositionen in der Sicherung.');
- const all=[...entries,...(data.workspace?[data.workspace]:[])],decoded=new Map();
+ const all=[...entries,...(data.workspace!=null?[data.workspace]:[])],decoded=new Map();
+ for(const entry of all)validateEntry(entry);
  for(const [url,value] of Object.entries(data.artifacts)){if(!fileUrl(url))throw Error('Ungültiger Dateipfad in der Sicherung.');decoded.set(url,checkFile(url,value));}
  for(const url of all.flatMap(refs))if(!decoded.has(url))throw Error('Eine Ergebnisdatei fehlt in der Sicherung.');
  for(const log of data.diagnostics)if(!validId(log?.runId)||!Array.isArray(log.entries)||log.entries.some(e=>!e||typeof e!=='object'||Array.isArray(e)))throw Error('Ungültiges Diagnoseprotokoll.');

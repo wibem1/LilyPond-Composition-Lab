@@ -1,3 +1,4 @@
+import {limitedJson} from './request-body.mjs';
 export const FONT_PART_BYTES=8*1024*1024;
 const tag=a=>String.fromCharCode(...a);
 const uint=a=>new DataView(Uint8Array.from(a).buffer).getUint32(0,true);
@@ -45,7 +46,7 @@ async function partBytes(req,expected){
 export async function soundfontUpload(req,bucket){
  const url=new URL(req.url),id=url.searchParams.get('id');
  if(req.method==='POST'&&!id){
-  const b=await req.json();if(!Number.isSafeInteger(b.bytes)||b.bytes<12)invalid('Ungültige SoundFont-Größe.');
+  const b=await limitedJson(req,4096);if(!Number.isSafeInteger(b.bytes)||b.bytes<12)invalid('Ungültige SoundFont-Größe.');
   const id=crypto.randomUUID(),key='soundfonts/'+id+'.sf2';
   const upload=await bucket.createMultipartUpload(key,{httpMetadata:{contentType:'application/octet-stream'}});
   const name=String(b.name||'Eigener SoundFont').replace(/[\x00-\x1f\x7f]/g,'').slice(0,200);

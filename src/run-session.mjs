@@ -80,3 +80,17 @@ export async function streamRun(request,env,ctx,runId,execute,io){
  ctx?.waitUntil?.(work);
  return new Response(stream,{headers:{'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 }
+
+// Legacy JSON clients use the same durable reservation as streaming clients.
+export async function synchronousRun(request,env,ctx,runId,execute,io){
+ let response;
+ const stream=await streamRun(request,env,ctx,runId,async(req,bindings)=>{
+  const result=await execute(req,bindings);response=result.clone();return result;
+ },io);
+ // Drain heartbeats so execution and final persistence finish before JSON return.
+ await stream.text();
+ if(response)return response;
+ const existing=await readRunSession(runId,io);
+ if(existing?.result)return Response.json(existing.result,{status:existing.httpStatus||200,headers:{'Cache-Control':'no-store'}});
+ return Response.json({runId,resume:true,error:'Auftrag bereits angenommen. Status mit derselben Auftragskennung abfragen.'},{status:409,headers:{'Cache-Control':'no-store'}});
+}

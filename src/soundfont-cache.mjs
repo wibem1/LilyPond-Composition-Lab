@@ -1,6 +1,6 @@
 // Keep just the active font on this device; metadata still comes from the server.
 export class SoundFontCache {
- constructor({storage=globalThis.caches,fetcher=globalThis.fetch,onwarning=()=>{}}={}){
+ constructor({storage=globalThis.caches,fetcher=(...args)=>globalThis.fetch(...args),onwarning=()=>{}}={}){
   this.storage=storage;this.fetcher=fetcher;this.onwarning=onwarning;this.pending=new Map();
   this.key='/__lab_saved_soundfont__';
   this.activeVersion='';this.writes=Promise.resolve();

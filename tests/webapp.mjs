@@ -30,7 +30,7 @@ globalThis.fetch=async(url,opts={})=>{
 };
 async function call(path,{method='GET',data,origin}={}){const headers={};if(data)headers['Content-Type']='application/json';if(origin)headers.Origin=origin;return worker.fetch(new Request('https://lab.test'+path,{method,headers,body:data?JSON.stringify(data):undefined}),env,{})}
 async function value(path,opts){const r=await call(path,opts);assert.equal(r.status,200,await r.clone().text());return r.json()}
-const html=await (await call('/')).text();assert(html.includes('V1.2.14'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
+const html=await (await call('/')).text();assert(html.includes('V1.2.16'));assert(html.includes('Neu kompilieren'));assert(!html.includes('Technisch umsetzen'));
 await value('/api/key-store',{method:'POST',data:{key:'sk-or-v1-TESTKEY'}});assert.equal((await value('/api/key-status')).stored,true);
 assert(!new TextDecoder().decode(env.BUCKET.items.get('settings/key.json').data).includes('sk-or-v1-TESTKEY'));
 assert.equal((await call('/api/key-store',{method:'POST',data:{key:'x'},origin:'https://evil.test'})).status,403);
@@ -46,7 +46,7 @@ const result=await value('/api/run',{method:'POST',data});assert.equal(paid,1);a
 assert.equal((await call(result.compiled.pages[0].url)).headers.get('Content-Type'),'image/svg+xml');assert.equal((await call(result.compiled.url)).status,200);
 const history=(await value('/api/history/'+result.historyId)).entry;assert.equal(history.techout,attributedAnswer);assert.equal(history.system,'MY EDITED SYSTEM');assert.equal(history.pages.length,result.compiled.pages.length);
 const ws=(await value('/api/workspace')).workspace;assert.equal(ws.techout,attributedAnswer);assert.equal(ws.compositionModel,'test/model');
-const diag=await (await call('/api/diagnosis?runId='+runId)).text();assert(!diag.includes('sk-or-v1-TESTKEY'));assert.equal(JSON.parse(diag).entries.length,3);assert(diag.includes('durationMs'));assert(diag.includes('MY EDITED SYSTEM'));
+const diag=await (await call('/api/diagnosis?runId='+runId)).text();assert(!diag.includes('sk-or-v1-TESTKEY'));assert.equal(JSON.parse(diag).entries.length,5);assert(JSON.parse(diag).entries.some(e=>e.event==='lauf_abgeschlossen'));assert(diag.includes('durationMs'));assert(diag.includes('MY EDITED SYSTEM'));
 const repeated=await value('/api/run',{method:'POST',data:{...data,runId:'1111222233334444',title:result.title}});
 assert.equal(repeated.title,'Nächtlicher Dialog');assert.equal(repeated.answer,attributedAnswer.replace('Teststück','Nächtlicher Dialog'));assert.equal(repeated.rawAnswer,answer);
 assert.equal(repeated.titleWarning,'');assert(Math.abs(repeated.usage.cost-.0003)<1e-9);
@@ -72,7 +72,7 @@ await value('/api/run',{method:'POST',data:{...data,system:technicalPrompt,runId
 assert.equal(requests[migrationIndex].messages[0].content,originalPrompt);assert.equal((await value('/api/workspace')).workspace.system,originalPrompt.split('Zusätzliche musikalische und technische Vorgaben:\n')[1]);namingDown=false;
 rendererMidi=driftMidi;
 const drift=await value('/api/compile-lilypond',{method:'POST',data:{code:answer,title:'Oktavtest',runId:'88889999aaaabbbb'}});
-assert(drift.warning.includes('Tonumfang prüfen'));assert(drift.url);assert.equal((await call(drift.url)).status,200);assert(drift.pages.length);rendererMidi=null;
+assert(drift.warning.includes('Tonumfang prüfen'));assert(!drift.url,'invalid note bytes are diagnostic-only until successfully repaired');assert(drift.pages.length);rendererMidi=null;
 // A MIDI violation not explained by source pitches is reported, never sent to AI.
 rendererMidi=driftMidi;namingDown=true;
 const mechanical=await value('/api/run',{method:'POST',data:{...data,runId:'aaaaccccdddd1111'}});
@@ -160,10 +160,10 @@ largeFont.set(new TextEncoder().encode('JUNK'),sf.byteLength);
 new DataView(largeFont.buffer).setUint32(sf.byteLength+4,largeFont.length-sf.byteLength-8,true);
 new DataView(largeFont.buffer).setUint32(4,largeFont.length-8,true);
 const largeResponse=await worker.fetch(new Request('https://lab.test/api/soundfont',{method:'POST',headers:{'Content-Length':String(largeFont.length),'X-SoundFont-Name':'Large.sf2'},body:largeFont}),env,{});
-assert.equal(largeResponse.status,200);assert.equal((await largeResponse.json()).bytes,largeFont.length);
-assert.deepEqual(new Uint8Array(await (await call('/api/soundfont/file')).arrayBuffer()),largeFont);
+assert.equal(largeResponse.status,413);
+assert.deepEqual(new Uint8Array(await (await call('/api/soundfont/file')).arrayBuffer()),new Uint8Array(sf),'oversized legacy upload preserves the saved font');
 assert(!(await (await call('/app.mjs')).text()).includes('f.size>64*1024*1024'));
-console.log('PASS: valid SF2 over 64 MiB with Content-Length saves and round-trips unchanged; browser size guard removed.');
+console.log('PASS: oversized legacy whole-body upload rejected before allocation; existing font retained; large fonts use the multipart path.');
 await fontPost(sf,'Second piano.sf2');assert(!env.BUCKET.items.has(savedFontKey));assert.equal((await value('/api/soundfont')).name,'Second piano.sf2');
 assert.equal((await value('/api/diagnosis?runId=aa0011223344556688')).playback.soundfont,'Second piano.sf2');
 await value('/api/soundfont',{method:'DELETE'});assert((await value('/api/soundfont')).standard);assert.equal((await call('/api/soundfont/file')).status,404);
@@ -390,3 +390,13 @@ await env.BUCKET.put('runs/'+interruptedRevision+'.json',JSON.stringify({status:
 await env.BUCKET.put('checkpoints/'+interruptedRevision+'.json',JSON.stringify({input:{operation:'correct',model:'test/model',task:'',title:'Teststück',compositionReasoning:'high',originalHistoryId:correctionOriginal.id},response:{model:'actual/reviser',usage:{cost:.02},choices:[{message:{content:answer},finish_reason:'interrupted'}]}}));
 const beforeRestore=paid;const restoredRevision=await value('/api/run-status?runId='+interruptedRevision);assert.equal(paid,beforeRestore);assert(restoredRevision.result.compiled.incomplete);assert.equal(restoredRevision.result.revision.mode,'correct');assert.equal(restoredRevision.result.costs.composition,.03);assert.equal(restoredRevision.result.costs.realisation,.03);assert.equal(restoredRevision.result.correctionStages.at(-1).actualModel,'actual/reviser');assert.deepEqual((await value('/api/history/'+correctionOriginal.id)).entry,revisionBaseline.entry);
 console.log('PASS: interrupted general correction restores source, parent, model stage and realisation costs without starting another paid call.');
+
+// Semantic verification must use compiler messages, excluding captured text.
+musicXmlLogs='LABXML-BEGIN'+xmlTree+'LABXML-END\n'+layoutError;
+const layoutCorrection=await value('/api/run',{method:'POST',data:{...reviseInput,operation:'correct',runId:'ab12000020261018aabbccddeeff0010'}});
+assert(!layoutCorrection.compiled.incomplete);assert(layoutCorrection.compiled.completeness);
+musicXmlLogs='LABXML-BEGIN'+xmlTree+'LABXML-END\n'+layoutError+'\nscore.ly:1: error: syntax error';
+const brokenCorrection=await value('/api/run',{method:'POST',data:{...reviseInput,operation:'correct',runId:'ab12000020261018aabbccddeeff0011'}});
+assert(brokenCorrection.compiled.incomplete);
+musicXmlLogs='';
+console.log('PASS: correction semantic verification accepts only isolated layout failure with complete equal-length staves; real syntax errors remain blocked.');

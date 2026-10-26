@@ -1,6 +1,6 @@
-# LilyPond Composition Lab · V1.2.14
+# LilyPond Composition Lab · V1.2.16
 
-Private WebApp für Computer, iPad und Android. Auftrag → KI → editierbarer LilyPond-Notentext → Partitur, Wiedergabe und Export. Versionsdatum: 26.10.2026. V1.2.14 vereinheitlicht Compilerprüfungen und MIDI-Aufbereitung bei gleichem Funktionsumfang. V1.2.13 korrigiert den MusicXML-Export bei dem bekannten internen LilyPond-Seitenaufteilungsfehler; vollständige Notenstruktur bleibt erforderlich.
+Private WebApp für Computer, iPad und Android. Auftrag → KI → editierbarer LilyPond-Notentext → Partitur, Wiedergabe und Export. Versionsdatum: 26.10.2026. V1.2.16 korrigiert das SoundFont-Vorladen auf Safari/iPad und prüft die Wiederherstellung des zuletzt gespeicherten SoundFonts beim erneuten Öffnen. [Umfang und Prüfung](docs/release-1.2.16.md).
 
 ## Arbeiten mit der App
 

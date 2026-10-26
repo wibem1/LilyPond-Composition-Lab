@@ -42,7 +42,7 @@ rendererDown=true;
 const unavailable=await call('/api/run',second);assert.equal(unavailable.status,412);assert.equal(paid.length,1);
 assert.equal((await value('/api/history/'+idea.historyId)).entry.draft,edited);
 rendererDown=false;failComposition=true;
-const failed=await call('/api/run',second);assert.equal(failed.status,502);assert.equal(paid.length,2);
+const failed=await call('/api/run',{...second,runId:'aaaa1111bbbb3334'});assert.equal(failed.status,502);assert.equal(paid.length,2);
 assert.equal((await value('/api/history/'+idea.historyId)).entry.ideaStage.answer,idea.draft);
 assert.equal((await value('/api/history/'+idea.historyId)).entry.compositionStage,null);
 failComposition=false;

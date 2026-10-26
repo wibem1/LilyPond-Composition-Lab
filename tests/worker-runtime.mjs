@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 // Executes the shipped streaming/storage modules in workerd with real local R2.
 // No provider endpoint, production data, or API key is used.
 const source=`
-import {streamRun,readRunSession} from './src/run-session.mjs';
+import {streamRun,synchronousRun,readRunSession} from './src/run-session.mjs';
 import {runStorage} from './src/run-storage.mjs';
 import {readCompositionResponse} from './src/provider-stream.mjs';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -22,6 +22,10 @@ export default {async fetch(req,env,ctx){
   const stale=await io.replace('runs/cas.json',state,{...state,status:'interrupted'});
   return Response.json({claims,replaced,stale,final:await io.read('runs/cas.json')});
  }
+ if(url.pathname==='/sync')return synchronousRun(req,env,ctx,id,async()=>{
+  const old=await io.read('count/'+id);await io.write('count/'+id,{n:(old?.n||0)+1});
+  await sleep(60);return Response.json({answer:'sync once'});
+ },io);
  return streamRun(req,env,ctx,id,async()=>{
   const old=await io.read('count/'+id);await io.write('count/'+id,{n:(old?.n||0)+1});
   let providerController;
@@ -53,6 +57,11 @@ try{
  assert.equal(state?.status,'completed');assert.equal(state.result.answer,'Empfangener Notentext');
  const duplicate=await runtime.dispatchFetch('https://test/start?id='+id,{method:'POST'});assert.equal((await duplicate.json()).resume,true);
  assert.equal((await (await bucket.get('count/'+id)).json()).n,1);
+ const sync=await Promise.all([runtime.dispatchFetch('https://test/sync?id=sync-once',{method:'POST'}),runtime.dispatchFetch('https://test/sync?id=sync-once',{method:'POST'})]);
+ assert.deepEqual(sync.map(r=>r.status).sort(),[200,409]);
+ assert.equal((await (await runtime.dispatchFetch('https://test/sync?id=sync-once',{method:'POST'})).json()).answer,'sync once');
+ assert.equal((await (await bucket.get('count/sync-once')).json()).n,1);
+ console.log('PASS: synchronous duplicate protection and replay in actual workerd/local R2.');
  console.log('PASS: actual workerd/local R2 conditional reservation, stale-write protection, SSE idle checkpoint and short-disconnect recovery without duplicate execution. Long-disconnect continuation remains unsupported.');
 }finally{await runtime.dispose();}
 
