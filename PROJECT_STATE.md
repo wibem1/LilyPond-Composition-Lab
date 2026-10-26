@@ -31,6 +31,11 @@ Separater Branch `refactor/cleanup-1.2.13`, Versionskennung auf ausdrücklichen 
 - Lange Browserunterbrechungen: HTTP-Worker kann nach 30 Sekunden Nachlauf beendet werden. R2 speichert Kontrollstände, führt Aufträge aber nicht weiter aus. Vollständige Entkopplung benötigt einen dauerhaften Auftragsdienst; auch die synchrone Route `/api/run` ist noch nicht über Isolates hinweg idempotent.
 - Interaktive Endabnahme mit angemeldetem Browser sowie Hörprüfung bleiben offen. Automatisierte Prüfungen ersetzen sie nicht.
 - V1.2.14 veröffentlicht: Hosting-Quellcommit `722f727a6bcc3dec58682bff10456d19d5d20d00`, Deploy `appgdep_6adefc0c3f848191a7bbfb520bca9483`, Status `succeeded`, Runtime-Revision 1. Bestehender privater Zugriff und Speicherbindung unverändert. Kein neuer Browser-Endtest.
-- Nächster einzelner Schritt: Nutzerprüfung der veröffentlichten V1.2.14.
+- Gesamtdurchsicht des eigenen Anwendungscodes am 26.10.2026 auf Ausgangscommit `711cffa812bfe34b9c0b94eed13a7d2bea0341c8` abgeschlossen; separater Zweig `audit/code-review-20261026`, **noch nicht veröffentlicht**.
+- Implementiert: gemeinsamer Wiederholungsschutz beider Auftragswege, Doppelklicksperre vor asynchronem Speichern, begrenztes Einlesen, strengere MIDI-Prüfung mit erhaltener Oktavdiagnose, vollständige Seitenlisten, Sicherungsvalidierung, SVG-Sandbox und konsistente Strukturprüfung.
+- Build, alle **28 Testprogramme**, Artefaktvalidierung und Diff-Prüfung erfolgreich. Einschließlich echter lokaler workerd-/R2-Tests, ohne kostenpflichtige KI oder neue externe Compileranfrage. Kein neuer Browser-Endtest.
+- npm-Produktionsscan: null bekannte Meldungen; vollständiger Scan: vier betroffene Entwicklungs-Paketknoten (drei hoch/einer niedrig), noch offen. Weitere offene Befunde: dauerhafter Auftragsdienst, vollständige Body-/Verbindungszeitlimits, Titel-Zusatzkosten, Ressourcenbereinigung und Wartbarkeit.
+- Einzelbefunde, Quellen und Prüfgrenzen: [vollständiger Codeprüfbericht](docs/code-review-2026-10-26.md).
+- Nächster einzelner Schritt: kontrolliertes Update der Entwicklungsabhängigkeiten; anschließend Korrekturen für ein separates Update integrieren und im angemeldeten Browser abnehmen.
 
 Historie und Einzelbelege: [bisheriger Projektstand](docs/project-state-through-1.2.13.md), [Streaming-Untersuchung](docs/investigation-2026-10-25.md), [V1.2.11](docs/release-1.2.11.md).

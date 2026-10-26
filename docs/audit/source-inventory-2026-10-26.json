@@ -1,0 +1,343 @@
+{
+  "baseline": "711cffa812bfe34b9c0b94eed13a7d2bea0341c8",
+  "files": [
+    {
+      "path": ".github/workflows/verify-1.2.12.yml",
+      "baselineSha256": "c3b783daec520e9e8b743053673a230decae85267251cda1093e3e428dae6e05",
+      "bytes": 532,
+      "scope": "manual source review"
+    },
+    {
+      "path": ".gitignore",
+      "baselineSha256": "2b141480dbbc8b526cfd95f564f7306d91bcc24d21b700fe80cbebbb74e602aa",
+      "bytes": 61,
+      "scope": "manual source review"
+    },
+    {
+      "path": ".openai/hosting.json",
+      "baselineSha256": "5ef92fb1561a910bfb77c234d11e2f1112816db2987e2c518977b77cfa4ec1c4",
+      "bytes": 94,
+      "scope": "manual source review"
+    },
+    {
+      "path": "app/app.mjs",
+      "baselineSha256": "31ca744decac5ef7c9f850ba6d7c7924099a5ae15b4640aa65b2e39470176158",
+      "bytes": 33700,
+      "scope": "manual source review"
+    },
+    {
+      "path": "app/index.html",
+      "baselineSha256": "4932e1e4dbd38f59d9a3da7c896f7c8dd4e8dbd433729416e4f99c651352bf46",
+      "bytes": 8872,
+      "scope": "manual source review"
+    },
+    {
+      "path": "app/style.css",
+      "baselineSha256": "0ecdccdae0ed4d0fddf63951b2d87c8909ffba99f8b6ff7a1109c71454066c35",
+      "bytes": 3990,
+      "scope": "manual source review"
+    },
+    {
+      "path": "package-lock.json",
+      "baselineSha256": "6436036238001c02475179296f6569811907da659a88596bdc4d5169570ddd02",
+      "bytes": 46705,
+      "scope": "dependency inventory"
+    },
+    {
+      "path": "package.json",
+      "baselineSha256": "d91806d0a5aa1f9fe4cdbfcc3adba0c38f85f1549a0710079631b5415e0d52b6",
+      "bytes": 397,
+      "scope": "manual source review"
+    },
+    {
+      "path": "scripts/build.mjs",
+      "baselineSha256": "e72f0cc3bcb2e52d3af87cc3d9f9940e39b723d6d726dce537aa376aa6662d5d",
+      "bytes": 1499,
+      "scope": "manual source review"
+    },
+    {
+      "path": "scripts/build.sh",
+      "baselineSha256": "d16c24123a61706a0b194858fc4b48613d50eff5d13c77ea638c57870ba05ec1",
+      "bytes": 139,
+      "scope": "manual source review"
+    },
+    {
+      "path": "scripts/test-all.mjs",
+      "baselineSha256": "90d505c3419e697832c72703b9fdd1a623ca8ad74542fdf6ae9b07206ece941a",
+      "bytes": 531,
+      "scope": "manual source review"
+    },
+    {
+      "path": "scripts/validate-artifact.mjs",
+      "baselineSha256": "39d9df53ac2461962466d5965c5f4d06f08024ceca40605952d8b753b88d41fd",
+      "bytes": 953,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/app-config.mjs",
+      "baselineSha256": "7c8d110ef94dc3f21d2a8f204e957c7cf39757d10947e6e234d38f74a54dd480",
+      "bytes": 187,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/arpeggio-playback.mjs",
+      "baselineSha256": "2741f17c255a3a97f7f1fe994a065513144a0314623e60b1aee1d76e57322e0a",
+      "bytes": 9716,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/automatic-ottava.mjs",
+      "baselineSha256": "203b6d5932223fd5a027593a055d085d630fdd53a58a7a95682a21974767353d",
+      "bytes": 6626,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/compiler-diagnostics.mjs",
+      "baselineSha256": "40367588be590dc06a2240b86ed47b4e051dac1b13d147f5e68e46e999d435fd",
+      "bytes": 1321,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/composition-attribution.mjs",
+      "baselineSha256": "55ff29f4d5416bda5833da929ee983bcf9afc39185cf7546ff69d37e43bd0259",
+      "bytes": 1797,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/composition-costs.mjs",
+      "baselineSha256": "57ccc45a2d39358da24cd65cf7b157386a855a1b9d574ebfa88de8fe1d94ca9f",
+      "bytes": 499,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/composition-defaults.mjs",
+      "baselineSha256": "6dd93ca06ca4948b6ad9c1b606437a5a253298f92fb65a3c50f71ea5201c86ca",
+      "bytes": 2246,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/composition-recovery.mjs",
+      "baselineSha256": "681d3531d8a83e3bd051abf8f74cb3522e48c18a692dede23051c43c2defc6e7",
+      "bytes": 3411,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/composition-revision.mjs",
+      "baselineSha256": "4070285ebba56b14a7653203ff8c0bba4a7a407d6320f51391da932e76913256",
+      "bytes": 2132,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/composition-workflow.mjs",
+      "baselineSha256": "78280b6b4e8cdca00f43ca2a5c0ca4b1a0e47b673c672fe6b07df4de5c54ee67",
+      "bytes": 9789,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/expression-playback.mjs",
+      "baselineSha256": "939efa26b52c96cecc7afe343fc46c9ee926ce781c8112fbebbf2db6b07924f0",
+      "bytes": 4667,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/history-backup.mjs",
+      "baselineSha256": "3e145a16e40dfa58a50e7a813df06a896f8765e12ffb7521d61a32e01634148a",
+      "bytes": 5059,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/instrument-ranges.mjs",
+      "baselineSha256": "099febb4ea6df64cfe259ecc1471e137a4aea1e951dbaf354972f0616db34c5b",
+      "bytes": 2711,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/instrument-registers.mjs",
+      "baselineSha256": "d52b1448b86fecf543202908ac16f2b13d7ea337746a72dc91e676a3ee169489",
+      "bytes": 2006,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/midi-reader.mjs",
+      "baselineSha256": "e56f78a7ef90ce8913268f0c984928fb60c4ebef2df2e348344c9d42d4b928c9",
+      "bytes": 2741,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/musicxml-capture.mjs",
+      "baselineSha256": "d802bb6253c3410426ddae6e7d6fe46d17486b4b7b49f7e8e424831250f796d6",
+      "bytes": 4197,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/musicxml-export.mjs",
+      "baselineSha256": "a8e4c8d832ef8711c62b05e0033b800dbf89dc09a06c6ffdb3ed4b5c113b990d",
+      "bytes": 20517,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/notation-layout.mjs",
+      "baselineSha256": "fe653a9e5b0df39f8cc5537c5d633185afe852580339a58487b65413f74619d8",
+      "bytes": 951,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/octave-repair.mjs",
+      "baselineSha256": "95d772d747f48e5867097ddbaaa6f096e74506ff614aff5a5bc018d21b1d9136",
+      "bytes": 17330,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/player-adapter.mjs",
+      "baselineSha256": "4dc0496a14fb8fd19aaaf9b2167e282d556489515c8466009f07153eefec5061",
+      "bytes": 8635,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/provider-stream.mjs",
+      "baselineSha256": "8302290650384a7b58d46b66b2267af2d3466cf710780efd083ab0f8be89105b",
+      "bytes": 2678,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/run-claim.mjs",
+      "baselineSha256": "d203a599d3a349997653eaa10bc181b610794132605e95578868b2734438ee0c",
+      "bytes": 526,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/run-client.mjs",
+      "baselineSha256": "6a00c2f976d922644b501dcaa79b2c823bc8620b7e6d4b4d65e191fdfc79c76d",
+      "bytes": 5754,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/run-session.mjs",
+      "baselineSha256": "c9d4ad2687ae4035e57dac351151868e16a9dede3c27be3317c894e730cde63f",
+      "bytes": 5987,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/run-storage.mjs",
+      "baselineSha256": "3fa4824e9ab9d3135ba7537c058aef1c7a732a8a220af46873cd0bd27d6dc7ea",
+      "bytes": 1135,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/score-completeness.mjs",
+      "baselineSha256": "b98b59173837d80709538be6667f0685c8573d2fd48e6477917ccda057c0f122",
+      "bytes": 1300,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/soundfont-cache.mjs",
+      "baselineSha256": "5f5eac015a01ae5e7d2b787595af4fe1e68fdb77b57a43a196fb669b9fefe58c",
+      "bytes": 2733,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/soundfont-upload.mjs",
+      "baselineSha256": "42f8fd71c0e62c0d027a9d2c44be4cdd446af44d7c3498757c288e85babf65cb",
+      "bytes": 5217,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/synth-entry.mjs",
+      "baselineSha256": "45d1b96140583c8f4f27a6fe3271c4f0290c2a44589b010af9bddb7468e806b4",
+      "bytes": 112,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/trill-playback.mjs",
+      "baselineSha256": "6b4a6776d02ecc2a2e7c383b16e7e14f7506bcf4a6ca255f3e4470833a4a4690",
+      "bytes": 6373,
+      "scope": "manual source review"
+    },
+    {
+      "path": "src/voice-articulation.mjs",
+      "baselineSha256": "ca234a99021a76ba2b1735165c56dc80663e49a6cbdf85f1a631bcf605277d6e",
+      "bytes": 3106,
+      "scope": "manual source review"
+    },
+    {
+      "path": "worker/assets.json",
+      "baselineSha256": "3a0cbdcdc962c3b7ec4590f1dedd1888f1e66a206b71657603ebaddc45f18d1a",
+      "bytes": 8727975,
+      "scope": "embedded asset inventory, not full vendor source review"
+    },
+    {
+      "path": "worker/index.js",
+      "baselineSha256": "e09c340758e39b057cac715c4e78fa0d1a0f20974a530e4ac2d103a94fbcfcb4",
+      "bytes": 66430,
+      "scope": "manual source review"
+    }
+  ],
+  "embeddedAssets": [
+    {
+      "url": "/soundfont-player.mjs",
+      "type": "text/javascript; charset=utf-8",
+      "sha256": "3b78ca7ef4fed3fb9f3b7c950715cf590a696dd4a60bbf9add35b34210ac6b34",
+      "encoding": "text"
+    },
+    {
+      "url": "/TimGM6mb.sf2",
+      "type": "application/octet-stream",
+      "sha256": "cb53279e2ce286932f0f07a9f8aaa85de64008490806e63899652bd1bc4522c0",
+      "encoding": "base64"
+    },
+    {
+      "url": "/LICENSE-SOUNDFONT.txt",
+      "type": "text/plain; charset=utf-8",
+      "sha256": "6ef01652619cf29b289a9403cd2ab59550fa3e2c30844c67292eea5421f993e9",
+      "encoding": "text"
+    },
+    {
+      "url": "/GPL-2.txt",
+      "type": "text/plain; charset=utf-8",
+      "sha256": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6",
+      "encoding": "text"
+    },
+    {
+      "url": "/icon-192.png",
+      "type": "image/png",
+      "sha256": "6d98464c001e5834f6e51cdcd1f83d7822f5e71f9865df26b1d30d3bcad2c4fd",
+      "encoding": "base64"
+    },
+    {
+      "url": "/icon-512.png",
+      "type": "image/png",
+      "sha256": "676cbe9e16b298ffa0f95229afc3676707cfbc8f3642fc49b19ac183735b94be",
+      "encoding": "base64"
+    },
+    {
+      "url": "/icon-maskable-512.png",
+      "type": "image/png",
+      "sha256": "676cbe9e16b298ffa0f95229afc3676707cfbc8f3642fc49b19ac183735b94be",
+      "encoding": "base64"
+    },
+    {
+      "url": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sha256": "8dd73a3f35d59da7f13ab106e98f37ceaa9a77080fd992813f8e5dde9f477519",
+      "encoding": "base64"
+    },
+    {
+      "url": "/spessasynth.mjs",
+      "type": "text/javascript; charset=utf-8",
+      "sha256": "99469613976dde528286641d0af5e2b30f1955ac7ec72eae7c6afaeec8227ac0",
+      "encoding": "text"
+    },
+    {
+      "url": "/spessasynth-processor.js",
+      "type": "text/javascript; charset=utf-8",
+      "sha256": "109ad445931e5c6e17739a994b2694d325577a6cb6fd2b56b39385edfc9e1fb5",
+      "encoding": "text"
+    },
+    {
+      "url": "/LICENSE-SYNTH.txt",
+      "type": "text/plain; charset=utf-8",
+      "sha256": "cbd5f97b779453dad8a2214a6ffd6f118ca1516a4704ab3a066ae672de61e0b5",
+      "encoding": "text"
+    }
+  ]
+}

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {parseMidi} from '../src/midi-reader.mjs';
-const fixture=async name=>{const b=await readFile(new URL('./fixtures/'+name,import.meta.url));return parseMidi(b.buffer.slice(b.byteOffset,b.byteOffset+b.length));};
+const fixture=async name=>{const b=await readFile(new URL('./fixtures/'+name,import.meta.url));return parseMidi(b.buffer.slice(b.byteOffset,b.byteOffset+b.length),{allowOutOfRangeNotes:true});};
 const original=await fixture('luna-octave-drift.mid'),fixed=await fixture('luna-octaves-corrected.mid');
 assert.equal(checkInstrumentRanges(original).status,'warning');assert.equal(checkInstrumentRanges(fixed).status,'passed');
 const notes=(m,ch)=>m.events.filter(e=>e.type==='on'&&e.ch===ch);

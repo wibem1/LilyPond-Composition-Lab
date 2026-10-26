@@ -122,3 +122,12 @@ await ui.get('correctComposition').onclick();assert.equal(requests.at(-1).operat
 ui=await open();assert(!ui.get('correctComposition').disabled);ui.get('new').onclick();assert(ui.get('reviseComposition').disabled);assert(ui.get('correctComposition').disabled);
 assert(!html.includes('correctionNotes'));assert(!html.includes('completeComposition'));assert(!html.includes('correctErrors'));
 console.log('PASS: existing task field drives targeted revision, automatic correction works with empty task, both submit current/imported score and selected model, show partials, persist reload and disable on empty score; no extra correction field or special completion button.');
+
+// Rapid repeated clicks must lock before the first asynchronous persistence step.
+db.workspace=null;ui=await open();ui.get('workflow').value='direct';
+const beforeDouble=requests.length;await Promise.all([ui.get('compose').onclick(),ui.get('compose').onclick()]);
+assert.equal(requests.length,beforeDouble+1,'double click starts one paid composition');
+ui.get('new').onclick();ui.get('workflow').value='concept';ui.get('workflow').onchange();
+const beforeIdeas=requests.length;await Promise.all([ui.get('compose').onclick(),ui.get('compose').onclick()]);
+assert.equal(requests.length,beforeIdeas+1,'double click starts one paid idea');
+console.log('PASS: rapid double clicks lock before awaiting storage and start exactly one composition or idea request.');

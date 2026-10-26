@@ -1,3 +1,4 @@
+import {limitedBytes,limitedJson} from '../src/request-body.mjs';
 import {revisionMessages} from '../src/composition-revision.mjs';
 import {sourceStatus,lilySource,continuationMessages,appendContinuation} from '../src/composition-recovery.mjs';
 import {readCompositionResponse} from '../src/provider-stream.mjs';
@@ -20,7 +21,7 @@ import {automaticOttava,sameMidiPerformance,removeGeneratedOttava} from '../src/
 import {expressionPlayback} from '../src/expression-playback.mjs';
 import {musicXmlCapture,capturedMusic} from '../src/musicxml-capture.mjs';
 import {musicXmlScore} from '../src/musicxml-export.mjs';
-import {streamRun,readRunSession,noteRunProgress} from '../src/run-session.mjs';
+import {streamRun,synchronousRun,readRunSession,noteRunProgress} from '../src/run-session.mjs';
 import {runStorage} from '../src/run-storage.mjs';
 const randomUUID=()=>crypto.randomUUID();
 const ENSEMBLE_PATTERNS=[
@@ -70,12 +71,12 @@ function ensureMidiDirective(text){
 const RENDER_URL='https://render.hacklily.org/rpc';
 const utf8=new TextEncoder();
 const bytes64=s=>Uint8Array.from(atob(s),x=>x.charCodeAt(0));
-const parseMidiBytes=bytes=>parseMidi(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
+const parseMidiBytes=(bytes,options)=>parseMidi(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),options);
 const to64=b=>{let s='';for(let i=0;i<b.length;i+=8192)s+=String.fromCharCode(...b.subarray(i,i+8192));return btoa(s)};
-const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
+const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{...headers,'Content-Type':'application/json; charset=utf-8'}});
 const text=(data,type='text/plain; charset=utf-8',extra={})=>new Response(data,{headers:{...headers,'Content-Type':type,...extra}});
-async function body(req){const s=await req.text();if(utf8.encode(s).length>1200000)throw Error('Anfrage zu groß.');return JSON.parse(s)}
+const body=req=>limitedJson(req);
 function asset(path){const a=ASSETS[path];if(!a)throw Error('Referenzdatei nicht gefunden.');return a.text===undefined?bytes64(a.base64):a.text}
 async function getJson(env,name){const o=await env.BUCKET.get(name);return o?o.json():null}
 async function putJson(env,name,data){await env.BUCKET.put(name,JSON.stringify(data),{httpMetadata:{contentType:'application/json'}})}
@@ -93,11 +94,11 @@ async function saveFile(env,title,ext,bytes){
 }
 async function saveHistory(env,b,{restoreDates=false}={}){
  const id=historyId(b.id)||randomUUID().replaceAll('-',''),old=await getJson(env,'history/'+id+'.json')||{};
- const entry={...workflowFields(b),id,createdAt:old.createdAt||(restoreDates&&b.createdAt)||new Date().toISOString(),updatedAt:(restoreDates&&b.updatedAt)||new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),actualCompositionModel:clean(b.actualCompositionModel??old.actualCompositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiTimingPolicy:b.midiTimingPolicy===MIDI_TIMING_POLICY?MIDI_TIMING_POLICY:'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:compositionCosts(b.costs===undefined?old.costs:b.costs),tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compositionReasoning:qualityChoice(b.compositionReasoning),compiler:clean(b.compiler),pages:validDownloads(b.pages),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
+ const entry={...workflowFields(b),id,createdAt:old.createdAt||(restoreDates&&b.createdAt)||new Date().toISOString(),updatedAt:(restoreDates&&b.updatedAt)||new Date().toISOString(),title:clean(b.title||'Unbenannte Komposition').slice(0,100),task:clean(b.task),draft:clean(b.draft),techout:clean(b.techout),compositionModel:clean(b.compositionModel).slice(0,200),actualCompositionModel:clean(b.actualCompositionModel??old.actualCompositionModel).slice(0,200),realisationModel:clean(b.realisationModel).slice(0,200),format:['midicsv','lilypond','abc'].includes(b.format)?b.format:'midicsv',runId:historyId(b.runId)||'',midiTimingPolicy:b.midiTimingPolicy===MIDI_TIMING_POLICY?MIDI_TIMING_POLICY:'',midiUrl:typeof b.midiUrl==='string'&&b.midiUrl.startsWith('/download/')?b.midiUrl.slice(0,500):'',downloads:validDownloads(b.downloads),costs:compositionCosts(b.costs===undefined?old.costs:b.costs),tokens1:Math.min(64000,Math.max(500,Number(b.tokens1)||64000)),system:clean(b.system),compositionReasoning:qualityChoice(b.compositionReasoning),compiler:clean(b.compiler),pages:validDownloads(b.pages,Infinity),tokens2:Math.min(64000,Math.max(500,Number(b.tokens2)||5000))};
  await env.BUCKET.put('history/'+id+'.json',JSON.stringify(entry),{httpMetadata:{contentType:'application/json'},customMetadata:{summary:JSON.stringify(historyPublic(entry))}});return historyPublic(entry);
 }
-function validDownloads(d){return Array.isArray(d)?d.filter(x=>typeof x?.url==='string'&&x.url.startsWith('/download/')&&typeof x.label==='string').slice(0,8).map(x=>({label:x.label.slice(0,100),url:x.url.slice(0,500)})):[]}
-function workspaceEntry(w){return {...workflowFields(w),title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compositionReasoning:['short','balanced','high','xhigh','default'].includes(w.compositionReasoning)?w.compositionReasoning:'short',compiler:clean(w.compiler),pages:validDownloads(w.pages),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||64000),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:compositionCosts(w.costs),downloads:validDownloads(w.downloads),midiTimingPolicy:w.midiTimingPolicy===MIDI_TIMING_POLICY?MIDI_TIMING_POLICY:'',midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};}
+function validDownloads(d,limit=8){return Array.isArray(d)?d.filter(x=>typeof x?.url==='string'&&x.url.startsWith('/download/')&&typeof x.label==='string').slice(0,limit).map(x=>({label:x.label.slice(0,100),url:x.url.slice(0,500)})):[]}
+function workspaceEntry(w){return {...workflowFields(w),title:clean(w.title),task:clean(w.task),draft:clean(w.draft),techout:clean(w.techout),system:clean(w.system),compositionReasoning:['short','balanced','high','xhigh','default'].includes(w.compositionReasoning)?w.compositionReasoning:'short',compiler:clean(w.compiler),pages:validDownloads(w.pages,Infinity),format:['lilypond','midicsv','abc'].includes(w.format)?w.format:'lilypond',tokens1:String(w.tokens1||64000),tokens2:String(w.tokens2||5000),compositionModel:clean(w.compositionModel).slice(0,200),realisationModel:clean(w.realisationModel).slice(0,200),historyId:historyId(w.historyId)||'',runId:historyId(w.runId)||'',costs:compositionCosts(w.costs),downloads:validDownloads(w.downloads),midiTimingPolicy:w.midiTimingPolicy===MIDI_TIMING_POLICY?MIDI_TIMING_POLICY:'',midiUrl:typeof w.midiUrl==='string'&&w.midiUrl.startsWith('/download/')?w.midiUrl:''};}
 async function encryptionKey(env){if(!env.LAB_KEY_ENCRYPTION_KEY)throw Error('Schlüsselspeicherung derzeit nicht verfügbar. Key im Eingabefeld verwenden.');return crypto.subtle.importKey('raw',bytes64(env.LAB_KEY_ENCRYPTION_KEY),'AES-GCM',false,['encrypt','decrypt'])}
 function keyInputError(message){const e=Error(message);e.status=400;return e;}
 function normalizeKey(value){
@@ -163,7 +164,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   let ottava={status:'unchanged',passages:[]},displayCode='';
   if(!result.err&&compilerDiagnostics(result.logs).status==='passed'&&result.midi){
    try{
-    const originalBytes=bytes64(result.midi),originalMidi=parseMidiBytes(originalBytes);
+    const originalBytes=bytes64(result.midi),originalMidi=parseMidiBytes(originalBytes,{allowOutOfRangeNotes:true});
     // First repair genuine pitch errors. Display optimization never hides them.
     if(checkInstrumentRanges(originalMidi).status==='passed'&&checkInstrumentRegisters(originalMidi,task).status!=='warning'){
      const planned=automaticOttava(code);
@@ -192,12 +193,14 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   if(result.midi){
    const bytes=bytes64(result.midi);let parsed;
    try{
-    parsed=parseMidiBytes(bytes);
+    parsed=parseMidiBytes(bytes,{allowOutOfRangeNotes:true});
     if(!parsed.events.some(e=>e.type==='on'))warning='Die erzeugte MIDI-Datei enthält keine Noten.';
    }catch(e){warning='Die erzeugte MIDI-Datei ist nicht lesbar: '+String(e.message||e);}
    if(!warning){
-    url=await saveFile(env,title,'mid',bytes);
-    rangeCheck=checkInstrumentRanges(parsed);registerCheck=checkInstrumentRegisters(parsed,task);warning=[rangeCheck.warning,registerCheck.warning].filter(Boolean).join('\n');
+    rangeCheck=checkInstrumentRanges(parsed);registerCheck=checkInstrumentRegisters(parsed,task);
+    const invalidNotes=parsed.events.some(e=>['on','off'].includes(e.type)&&e.key>127);
+    if(!invalidNotes)url=await saveFile(env,title,'mid',bytes);
+    warning=[rangeCheck.warning,registerCheck.warning,invalidNotes?'Ungültige MIDI-Tonbytes; Wiedergabe erst nach erfolgreicher Oktavkorrektur verfügbar.':''].filter(Boolean).join('\n');
    }
   }
   else warning='LilyPond erzeugte keine MIDI-Datei.';
@@ -242,7 +245,7 @@ async function handle(req,env,ctx){
   return text(file.body,'application/octet-stream');
  }
  if(req.method==='POST'&&p==='/api/soundfont'){
-  const buffer=await req.arrayBuffer();
+  const buffer=(await limitedBytes(req,8*1024*1024)).buffer;
   const data=new Uint8Array(buffer),tag=at=>String.fromCharCode(...data.subarray(at,at+4));
   if(data.length<12||tag(0)!=='RIFF'||tag(8)!=='sfbk'||new DataView(buffer).getUint32(4,true)+8!==data.length)return json({error:'Bitte eine vollständige SF2-Datei wählen.'},400);
   const view=new DataView(buffer),lists=new Set();let at=12;
@@ -351,12 +354,12 @@ async function handle(req,env,ctx){
  }
  if(req.method==='POST'&&p==='/api/midi-import'){
   const b=await body(req),bytes=bytes64(String(b.base64||''));if(bytes.length<18||bytes.length>900000||String.fromCharCode(...bytes.subarray(0,4))!=='MThd')return json({error:'Bitte eine gültige Standard-MIDI-Datei (max. 900 KB) wählen.'},400);
-  parseMidiBytes(bytes);return json({url:await saveFile(env,b.title,'mid',bytes),label:'MIDI-Datei'});
+  try{parseMidiBytes(bytes);}catch(e){return json({error:e.message},400);}return json({url:await saveFile(env,b.title,'mid',bytes),label:'MIDI-Datei'});
  }
  if(req.method==='GET'&&p.startsWith('/download/')){
   const name=decodeURIComponent(p.slice(10));if(!name||/[\/\\\x00-\x1f]/.test(name)||name==='.'||name==='..')return json({error:'Ungültiger Dateiname'},400);
   const obj=await env.BUCKET.get('files/'+name);if(!obj)return json({error:'Datei nicht gefunden'},404);
-  return text(obj.body,contentType(name),{'Content-Disposition':`attachment; filename="composition.${name.split('.').pop()}"; filename*=UTF-8''${encodeURIComponent(name)}`});
+  return text(obj.body,contentType(name),{'Content-Disposition':`attachment; filename="composition.${name.split('.').pop()}"; filename*=UTF-8''${encodeURIComponent(name)}`,...(name.endsWith('.svg')?{'Content-Security-Policy':"sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:"}:{})});
  }
 
  if(p==='/api/history-backup'&&['GET','POST'].includes(req.method)){
@@ -372,8 +375,7 @@ async function handle(req,env,ctx){
   };
   try{
    if(req.method==='GET')return text(JSON.stringify(await exportHistory(io)),'application/json; charset=utf-8',{'Content-Disposition':'attachment; filename="LilyPond-Verlauf-'+new Date().toISOString().slice(0,10)+'.json"'});
-   const raw=await req.text();if(utf8.encode(raw).length>backupByteLimit)return json({error:'Sicherungsdatei zu groß (24 MB).'},400);
-   return json(await importHistory(JSON.parse(raw),io));
+   return json(await importHistory(await limitedJson(req,backupByteLimit),io));
   }catch(e){return json({error:e.message||'Verlaufssicherung fehlgeschlagen.'},400);}
  }
 
@@ -404,7 +406,11 @@ async function handle(req,env,ctx){
   const costs={composition:0,realisation:0,total:0};for(const e of entries){const c=Number(e.usage?.cost);if(Number.isFinite(c)){if(e.stage==='composition')costs.composition+=c;if(e.stage==='realisation')costs.realisation+=c;costs.total+=c}}
   return text(JSON.stringify({app:'LilyPond Composition Lab',version:VERSION,createdAt:new Date().toISOString(),runId,relatedRunIds,workflow:related?.workflow||'direct',costs,playback:{soundfont:(await getJson(env,'settings/soundfont.json'))?.name||'TimGM6mb',trillPolicy:'musical-v2',arpeggioPolicy:'rolled-chord-v1',arpeggioStart:'on-beat',trillTargetNotesPerSecond:{min:4,max:10},trillStart:'principal; explicit upper-start override',voiceTimingPolicy:'independent-voices-v1',existingMidiRequiresRecompile:true},runStatus:session?{status:session.status,phase:session.phase,startedAt:session.startedAt,updatedAt:session.updatedAt}:null,entries},null,2),'application/json; charset=utf-8',{'Content-Disposition':`attachment; filename="Diagnose-${runId}.json"`});
  }
- if(req.method==='POST'&&p==='/api/run')return run(req,env);
+ if(req.method==='POST'&&p==='/api/run'){
+  const b=await body(req),id=b.runId===undefined?randomUUID().replaceAll('-',''):historyId(b.runId);
+  if(!id)return json({error:'Ungültige Auftragskennung.'},400);
+  return synchronousRun(new Request(req.url,{method:'POST',headers:req.headers,body:JSON.stringify({...b,runId:id})}),env,ctx,id,run,runIO);
+ }
  return json({error:'Nicht gefunden'},404);
 }
 
@@ -431,7 +437,8 @@ async function verifyScoreStructure(code,compiled){
  if(compiled.error)return;
  try{
   const captured=await rpc('render',{backend:'svg',src:musicXmlCapture(code),version:'stable'});
-  if(captured.err||compilerDiagnostics(captured.logs).status==='error')throw Error('Musikstruktur konnte nicht fehlerfrei geprüft werden.');
+  const diagnostics=compilerDiagnostics(String(captured.logs||'').replace(/LABXML-BEGIN.*?LABXML-END/gs,''));
+  if(captured.err||(diagnostics.status==='error'&&!onlyLayoutErrors(diagnostics)))throw Error('Musikstruktur konnte nicht fehlerfrei geprüft werden.');
   compiled.completeness=scoreCompleteness(capturedMusic(captured.logs));
  }catch(e){compiled.incomplete=true;compiled.error='Musikstruktur nicht bestätigt: '+e.message;}
 }

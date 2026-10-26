@@ -1,7 +1,8 @@
+import {limitedJson} from './request-body.mjs';
 // Store received text during SSE, including provider errors after HTTP 200.
 export async function readCompositionResponse(response,{checkpoint=async()=>{},timeoutMs=600000,checkpointIntervalMs=2000}={}){
  if(!response.headers.get('Content-Type')?.includes('text/event-stream')){
-  const data=await response.json();await checkpoint(data);return data;
+  const data=await limitedJson(response);await checkpoint(data);return data;
  }
  const reader=response.body.getReader(),decoder=new TextDecoder();
  let buffer='',answer='',model='',id='',usage=null,finish=null,error=null,lastSaved=0,lastAt=0,done=false,writes=Promise.resolve();
@@ -26,7 +27,7 @@ export async function readCompositionResponse(response,{checkpoint=async()=>{},t
   finish=choice?.finish_reason||finish;await save();
  }
  try{
-  while(!done){const part=await reader.read();if(part.done)break;buffer=(buffer+decoder.decode(part.value,{stream:true})).replace(/\r\n/g,'\n');let at;while(!done&&(at=buffer.indexOf('\n\n'))>=0){await event(buffer.slice(0,at));buffer=buffer.slice(at+2);}}
+  while(!done){const part=await reader.read();if(part.done)break;buffer=(buffer+decoder.decode(part.value,{stream:true})).replace(/\r\n/g,'\n');if(buffer.length>1200000)throw Error('KI-Antwortstrom überschreitet die sichere Ereignisgröße.');let at;while(!done&&(at=buffer.indexOf('\n\n'))>=0){await event(buffer.slice(0,at));buffer=buffer.slice(at+2);}}
   buffer+=decoder.decode();if(!done&&buffer.trim())await event(buffer);
   if(!done&&!finish&&!error)error={message:'Antwortstrom ohne Abschluss beendet.'};
  }catch(e){error={message:String(e.message||e)};finish='interrupted';}
