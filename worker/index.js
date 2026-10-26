@@ -2,7 +2,7 @@ import {revisionMessages} from '../src/composition-revision.mjs';
 import {sourceStatus,lilySource,continuationMessages,appendContinuation} from '../src/composition-recovery.mjs';
 import {readCompositionResponse} from '../src/provider-stream.mjs';
 import {scoreCompleteness} from '../src/score-completeness.mjs';
-import {compilerDiagnostics,recoverableLayoutError} from '../src/compiler-diagnostics.mjs';
+import {compilerDiagnostics,recoverableLayoutError,onlyLayoutErrors} from '../src/compiler-diagnostics.mjs';
 import {compositionCosts} from '../src/composition-costs.mjs';
 import {APP_VERSION as VERSION,MIDI_TIMING_POLICY} from '../src/app-config.mjs';
 import {DEFAULT_SYSTEM,currentSystem} from '../src/composition-defaults.mjs';
@@ -70,6 +70,7 @@ function ensureMidiDirective(text){
 const RENDER_URL='https://render.hacklily.org/rpc';
 const utf8=new TextEncoder();
 const bytes64=s=>Uint8Array.from(atob(s),x=>x.charCodeAt(0));
+const parseMidiBytes=bytes=>parseMidi(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
 const to64=b=>{let s='';for(let i=0;i<b.length;i+=8192)s+=String.fromCharCode(...b.subarray(i,i+8192));return btoa(s)};
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{...headers,'Content-Type':'application/json; charset=utf-8'}});
@@ -162,7 +163,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   let ottava={status:'unchanged',passages:[]},displayCode='';
   if(!result.err&&compilerDiagnostics(result.logs).status==='passed'&&result.midi){
    try{
-    const originalBytes=bytes64(result.midi),originalMidi=parseMidi(originalBytes.buffer.slice(originalBytes.byteOffset,originalBytes.byteOffset+originalBytes.byteLength));
+    const originalBytes=bytes64(result.midi),originalMidi=parseMidiBytes(originalBytes);
     // First repair genuine pitch errors. Display optimization never hides them.
     if(checkInstrumentRanges(originalMidi).status==='passed'&&checkInstrumentRegisters(originalMidi,task).status!=='warning'){
      const planned=automaticOttava(code);
@@ -171,7 +172,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
       const visual=performance.mode==='articulate'?expressionPlayback(visualPrepared).code:visualPrepared;
       const candidate=await rpc('render',{backend:'svg',src:await sourceFingerprint('automatic-ottava',initialInstrumentNames(visual)),version:'stable'});
       if(candidate.err||compilerDiagnostics(candidate.logs).status!=='passed'||!candidate.midi||!(candidate.files||[]).some(f=>typeof f==='string'&&f.includes('<svg')))throw Error('Oktavzeichen konnten nicht fehlerfrei kompiliert werden.');
-      const bytes=bytes64(candidate.midi),midi=parseMidi(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
+      const bytes=bytes64(candidate.midi),midi=parseMidiBytes(bytes);
       if(!sameMidiPerformance(originalMidi,midi))throw Error('MIDI unterscheidet sich nach der Notationsänderung.');
       result=candidate;displayCode=planned.code;ottava={status:'applied',passages:planned.passages,midiUnchanged:true};
      }
@@ -181,7 +182,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   const compilerLogs=String(result.logs||'');
   const logs=compilerLogs+'\nLAB-SOURCE-TRACE '+JSON.stringify(sourceTrace);
   const diagnostics=compilerDiagnostics(compilerLogs);
-  const layoutRecovered=recoverableLayoutError(compilerLogs,result);
+  const layoutRecovered=recoverableLayoutError(compilerLogs,result,diagnostics);
   if(diagnostics.status==='error'&&!layoutRecovered)return {error:'LilyPond meldet Compilerfehler. Der erzeugte Notensatz ist nicht verlässlich.',logs,diagnostics,sourceTrace,durationMs:Date.now()-started};
   if(result.err)return {error:'LilyPond-Kompilierung fehlgeschlagen: '+String(result.err),logs,sourceTrace,durationMs:Date.now()-started};
   const pages=[];
@@ -191,7 +192,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   if(result.midi){
    const bytes=bytes64(result.midi);let parsed;
    try{
-    parsed=parseMidi(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
+    parsed=parseMidiBytes(bytes);
     if(!parsed.events.some(e=>e.type==='on'))warning='Die erzeugte MIDI-Datei enthält keine Noten.';
    }catch(e){warning='Die erzeugte MIDI-Datei ist nicht lesbar: '+String(e.message||e);}
    if(!warning){
@@ -307,7 +308,7 @@ async function handle(req,env,ctx){
    // Export consumes the parsed music tree, not LilyPond's page layout or MIDI.
    // Permit only this known engraving failure; capturedMusic/musicXmlScore below
    // still require a complete, valid and exportable semantic tree.
-   const layoutRecovered=!rendered.err&&diagnostics.errors.length>0&&diagnostics.errors.every(line=>/programming error: bounds of this piece aren't breakable\./.test(line));
+   const layoutRecovered=!rendered.err&&onlyLayoutErrors(diagnostics);
    if(rendered.err||(diagnostics.status==='error'&&!layoutRecovered))throw Error('MusicXML-Export: LilyPond konnte den Notentext nicht fehlerfrei lesen. '+String(rendered.err||''));
    const title=compositionFilename(b.title||code.match(/\btitle\s*=\s*"([^"\n]+)"/)?.[1]||'Komposition');
    const composer=code.match(/\bcomposer\s*=\s*"([^"\n]*)"/)?.[1]||'';
@@ -350,7 +351,7 @@ async function handle(req,env,ctx){
  }
  if(req.method==='POST'&&p==='/api/midi-import'){
   const b=await body(req),bytes=bytes64(String(b.base64||''));if(bytes.length<18||bytes.length>900000||String.fromCharCode(...bytes.subarray(0,4))!=='MThd')return json({error:'Bitte eine gültige Standard-MIDI-Datei (max. 900 KB) wählen.'},400);
-  parseMidi(bytes.buffer);return json({url:await saveFile(env,b.title,'mid',bytes),label:'MIDI-Datei'});
+  parseMidiBytes(bytes);return json({url:await saveFile(env,b.title,'mid',bytes),label:'MIDI-Datei'});
  }
  if(req.method==='GET'&&p.startsWith('/download/')){
   const name=decodeURIComponent(p.slice(10));if(!name||/[\/\\\x00-\x1f]/.test(name)||name==='.'||name==='..')return json({error:'Ungültiger Dateiname'},400);
