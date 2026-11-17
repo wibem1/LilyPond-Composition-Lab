@@ -15,7 +15,7 @@ import {checkInstrumentRanges} from '../src/instrument-ranges.mjs';
 import {checkInstrumentRegisters} from '../src/instrument-registers.mjs';
 import {automaticOctaveRepair,legacyOctaveOriginal} from '../src/octave-repair.mjs';
 import {soundfontUpload} from '../src/soundfont-upload.mjs';
-import {initialInstrumentNames} from '../src/notation-layout.mjs';
+import {initialInstrumentNames,ensureMidiInstruments} from '../src/notation-layout.mjs';
 import {automaticOttava,sameMidiPerformance,removeGeneratedOttava} from '../src/automatic-ottava.mjs';
 import {expressionPlayback} from '../src/expression-playback.mjs';
 import {musicXmlCapture,capturedMusic} from '../src/musicxml-capture.mjs';
@@ -140,7 +140,8 @@ async function compileLilyMidi(env,code,title,runId,task=''){
  const started=Date.now();
  if(code.length>200000)return {error:'LilyPond-Quelle ist zu groß.'};
  try{
-  const prepared=ensureMidiDirective(code);
+  const assigned=ensureMidiInstruments(code);
+  const prepared=ensureMidiDirective(assigned.code);
   let performance;
   try{performance=expressionPlayback(prepared.code);}catch(e){performance={code:prepared.code,mode:'fallback',warning:e.message};}
   let result=await rpc('render',{backend:'svg',src:initialInstrumentNames(performance.code),version:'stable'});
@@ -149,7 +150,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
    result=await rpc('render',{backend:'svg',src:initialInstrumentNames(prepared.code),version:'stable'});
    performance={mode:'fallback',warning:expressionError};
   }
-  let ottava={status:'unchanged',passages:[]},displayCode='';
+  let ottava={status:'unchanged',passages:[]},displayCode=assigned.added?assigned.code:'';
   if(!result.err&&compilerDiagnostics(result.logs).status==='passed'&&result.midi){
    try{
     const originalBytes=bytes64(result.midi),originalMidi=parseMidi(originalBytes.buffer.slice(originalBytes.byteOffset,originalBytes.byteOffset+originalBytes.byteLength));
@@ -157,13 +158,13 @@ async function compileLilyMidi(env,code,title,runId,task=''){
     if(checkInstrumentRanges(originalMidi).status==='passed'&&checkInstrumentRegisters(originalMidi,task).status!=='warning'){
      const planned=automaticOttava(code);
      if(planned.passages.length){
-      const visualPrepared=ensureMidiDirective(planned.code).code;
+      const visualPrepared=ensureMidiDirective(ensureMidiInstruments(planned.code).code).code;
       const visual=performance.mode==='articulate'?expressionPlayback(visualPrepared).code:visualPrepared;
       const candidate=await rpc('render',{backend:'svg',src:initialInstrumentNames(visual),version:'stable'});
       if(candidate.err||compilerDiagnostics(candidate.logs).status!=='passed'||!candidate.midi||!(candidate.files||[]).some(f=>typeof f==='string'&&f.includes('<svg')))throw Error('Oktavzeichen konnten nicht fehlerfrei kompiliert werden.');
       const bytes=bytes64(candidate.midi),midi=parseMidi(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
       if(!sameMidiPerformance(originalMidi,midi))throw Error('MIDI unterscheidet sich nach der Notationsänderung.');
-      result=candidate;displayCode=planned.code;ottava={status:'applied',passages:planned.passages,midiUnchanged:true};
+      result=candidate;displayCode=ensureMidiInstruments(planned.code).code;ottava={status:'applied',passages:planned.passages,midiUnchanged:true};
      }
     }
    }catch(e){ottava={status:'rejected',passages:[],error:String(e.message||e)};}
@@ -190,7 +191,7 @@ async function compileLilyMidi(env,code,title,runId,task=''){
   if(performance.mode==='fallback')warning=[warning,'Erweiterte Ausdruckswiedergabe fehlgeschlagen; normale MIDI-Wiedergabe verwendet.'].filter(Boolean).join('\n');
   if(ottava.status==='rejected')warning=[warning,'Automatische Oktavzeichen nicht übernommen; ursprüngliche Notation erhalten.'].filter(Boolean).join('\n');
   warning=[diagnostics.warnings.length?'Compilerwarnungen:\n'+diagnostics.warnings.join('\n'):'',warning].filter(Boolean).join('\n');
-  return {diagnostics,...(displayCode?{code:displayCode}:{}),ottava,url,midiTimingPolicy:url?MIDI_TIMING_POLICY:'',label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,trillPolicy:performance.mode==='articulate'?'musical-v2':null,arpeggioPolicy:performance.mode==='articulate'?'rolled-chord-v1':null,voiceTimingPolicy:performance.mode==='articulate'?'independent-voices-v1':null,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiBlock:prepared.added,durationMs:Date.now()-started};
+  return {diagnostics,...(displayCode?{code:displayCode}:{}),ottava,url,midiTimingPolicy:url?MIDI_TIMING_POLICY:'',label:'MIDI-Datei',pages,logs,warning,rangeCheck,registerCheck,expressionPlayback:{mode:performance.mode,scores:performance.scores||0,trillPolicy:performance.mode==='articulate'?'musical-v2':null,arpeggioPolicy:performance.mode==='articulate'?'rolled-chord-v1':null,voiceTimingPolicy:performance.mode==='articulate'?'independent-voices-v1':null,error:performance.warning||''},instrumentLabels:'first-system-only',addedMidiInstruments:assigned.added,addedMidiBlock:prepared.added,durationMs:Date.now()-started};
  }catch(e){return {error:String(e.message||e),durationMs:Date.now()-started}}
 }
 async function repairOctaves(env,code,title,runId,compiled,task=''){
