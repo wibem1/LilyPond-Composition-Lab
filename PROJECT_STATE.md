@@ -1,3 +1,11 @@
+## Offene Korrektur vom 17.11.2026 – MIDI-Instrumente bei LilyPond-Import
+
+- Branch `fix/midi-instrument-names-20261117`, PR #4; **noch nicht veröffentlicht**, bisherige Produktionsversion bleibt V1.2.11.
+- Fehlerbeispiel: OpenCraft `Elisabethanische_Serenade.ly` schreibt `instrumentName = "Violine"`, jedoch kein `midiInstrument`; analog Klavier-Notenzeilen.
+- Implementierung: `ensureMidiInstruments` in `src/notation-layout.mjs` ergänzt eindeutige MIDI-Instrumente für benannte Staff-Kontexte sowie die Kinder eines als Klavier bezeichneten PianoStaff. Explizite Zuordnungen werden nicht überschrieben. Beim Kompilieren und bei der optionalen Ottava-Neukompilierung verwendet; angepasster Quelltext wird zurückgegeben.
+- Verifiziert: unmittelbarer Test mit dem betroffenen LilyPond-Score-Skelett (Violine plus zwei Klavierzeilen), Idempotenz und Schutz expliziter Instrumentangaben bestanden. Regressionstest `tests/midi-instrument-names.mjs` auf GitHub gesichert.
+- **Noch offen:** vollständiges `npm test`, `npm run build`, `npm run validate`, echte Hacklily-MIDI-Kompilierung sowie SoundFont-Hörtest. GitHub-PR meldete noch keine Workflow-Checks. Vor Integration/Release Version auf 1.2.12 anheben und diese Prüfungen durchführen. Keine Produktionsfreigabe ohne Nachweis.
+
 # Projektstand – LilyPond Composition Lab
 Stand: 25.10.2026 · **V1.2.11 als begrenztes Fehlerkorrektur-Update veröffentlicht**
 
