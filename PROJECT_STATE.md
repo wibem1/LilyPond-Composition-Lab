@@ -1,13 +1,15 @@
 # Projektstand – LilyPond Composition Lab
-Stand: 19.11.2026 · **V1.2.17 in Entwicklung; nicht veröffentlicht**
+Stand: 19.11.2026 · **V1.2.17 veröffentlicht**
 
 ## V1.2.17 · Komposition abbrechen
 
 - Aktueller geprüfter Produktstand: V1.2.16; Sites-Version 63 mit Quellcommit `2a62345c13251cb08a0635c17e6e4334046e8680`.
 - Implementiert: Abbruchknopf während laufender KI-Aufträge, Abbruchsignal bis zum OpenRouter-Aufruf, Statusprüfung über den vorhandenen R2-Speicher für Worker-Isolate und Sicherung bereits empfangener Notentext-Fragmente.
-- Prüfstatus: Build und Integrationstests für V1.2.17 stehen aus; deshalb nicht freigegeben und nicht veröffentlicht.
-- GitHub-Stand: Feature-Branch `feat/cancel-composition-20261119`, Draft-PR #5 gegen `audit/code-review-20261026`.
-- Nächster Schritt: Abbruchpfad einschließlich Worker-/R2-Verhalten prüfen; nach bestandenem Nachweis kann V1.2.17 veröffentlicht werden.
+- Prüfung bestanden: `npm run build`, `npm test` (**28 Testprogramme**), `npm run validate` und `git diff --check`. Neue Client- und Worker/R2-Prüfungen belegen Abbruch, Wiederherstellung des Teiltexts und Cancel-Status über Isolate hinweg.
+- Erfolgreich veröffentlicht: Sites-Version 64, Deployment `appgdep_6aff52ab68408191864b905bddaba230`, Runtime-Revision 1; Produktions-URL https://lilypond-composition-lab.wibem1.chatgpt.site.
+- Veröffentlichter Hosting-Quellcommit: `63916845b9a40f5fb0a1f450cea4ffde97c93c0c`.
+- GitHub-Entwicklungsstand: Feature-Branch `feat/cancel-composition-20261119`, Draft-PR #5 gegen `audit/code-review-20261026`; dieser Branch enthält die geprüften Tests und Dokumentation.
+- Nach dem Deployment wurde nur diese Projektstanddatei um die Veröffentlichungsdaten ergänzt; Laufzeitcode und Tests entsprechen dem veröffentlichten Commit.
 
 
 ## V1.2.16 · SoundFont auf Safari und Wiederherstellung
