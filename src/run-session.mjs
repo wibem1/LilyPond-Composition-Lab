@@ -104,8 +104,8 @@ export async function streamRun(request,env,ctx,runId,execute,io){
 // Legacy JSON clients use the same durable reservation as streaming clients.
 export async function synchronousRun(request,env,ctx,runId,execute,io){
  let response;
- const stream=await streamRun(request,env,ctx,runId,async(req,bindings)=>{
-  const result=await execute(req,bindings);response=result.clone();return result;
+ const stream=await streamRun(request,env,ctx,runId,async(req,bindings,signal)=>{
+  const result=await execute(req,bindings,signal);response=result.clone();return result;
  },io);
  // Drain heartbeats so execution and final persistence finish before JSON return.
  await stream.text();
