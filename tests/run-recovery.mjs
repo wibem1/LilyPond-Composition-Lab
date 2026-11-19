@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {streamRun,readRunSession} from '../src/run-session.mjs';
+import {streamRun,readRunSession,requestRunCancel} from '../src/run-session.mjs';
 import {RunClient} from '../src/run-client.mjs';
 const items=new Map(),logs=[];const io={read:async k=>structuredClone(items.get(k)||null),write:async(k,v)=>items.set(k,structuredClone(v)),log:async(event,id,data)=>logs.push({event,id,...data})};
 const id='abcdef1234567890';let calls=0,release;const gate=new Promise(r=>release=r),tasks=[];
@@ -37,3 +37,25 @@ await assert.rejects(invalid.recover(),/weiterhin nicht erreichbar/);
 assert.equal(invalidPolls,20);assert.equal(invalid.pendingRunId,id);
 }
 console.log('PASS: malformed status responses pause recovery after 20 attempts and retain the pending run for reload.');
+
+// An explicit user cancellation reaches the active worker and keeps its last checkpoint.
+const cancelledId='ccaa000020261119aabbccddeeff0001',cancelledItems=new Map(),cancelledLogs=[],cancelTasks=[];
+const partial={runId:cancelledId,answer:'partial LilyPond',cancelled:true,compiled:{incomplete:true,error:'Unvollständiger Notentext.'}};
+const cancelIO={read:async k=>structuredClone(cancelledItems.get(k)||null),write:async(k,v)=>cancelledItems.set(k,structuredClone(v)),log:async(event,id,data)=>cancelledLogs.push({event,id,...data}),requestCancel:async id=>cancelledItems.set('cancel/'+id,true),cancelRequested:async id=>Boolean(cancelledItems.get('cancel/'+id)),clearCancel:async id=>cancelledItems.delete('cancel/'+id),restore:async()=>partial};
+const cancelResponse=await streamRun(new Request('https://test/run'),{}, {waitUntil:p=>cancelTasks.push(p)},cancelledId,async(_request,_env,signal)=>new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true})),cancelIO);
+const cancelReader=cancelResponse.body.getReader();assert.match(new TextDecoder().decode((await cancelReader.read()).value),/started/);
+assert.equal((await requestRunCancel(cancelledId,cancelIO)).accepted,true);let cancelStream='';for(;;){const part=await cancelReader.read();if(part.done)break;cancelStream+=new TextDecoder().decode(part.value)}await Promise.all(cancelTasks);
+const cancelledSession=await readRunSession(cancelledId,cancelIO);assert.equal(cancelledSession.status,'failed');assert.equal(cancelledSession.httpStatus,499);assert.equal(cancelledSession.result.cancelled,true);assert.equal(cancelledSession.result.answer,'partial LilyPond');assert.match(cancelStream,/"type":"result"/);assert.equal(cancelledItems.has('cancel/'+cancelledId),false);
+console.log('PASS: explicit cancellation aborts the active execution, preserves the partial checkpoint, and clears the R2 cancellation marker.');
+
+const clientCancelId='ddee000020261119aabbccddeeff0001',clientCancelStorage=storage(),clientPartial={...partial,runId:clientCancelId};let clientStreamAborted=false;
+const cancellingClient=new RunClient({fetch:async(url,options)=>{
+ if(url==='/api/run-stream')return new Promise((_resolve,reject)=>options.signal.addEventListener('abort',()=>{clientStreamAborted=true;reject(new DOMException('Aborted','AbortError'));},{once:true}));
+ if(url==='/api/run-cancel')return Response.json({accepted:true});
+ if(url==='/api/client-events')return Response.json({saved:true});
+ if(url.startsWith('/api/run-status'))return Response.json({status:'failed',httpStatus:499,result:clientPartial});
+ throw Error(url);
+},storage:clientCancelStorage,delay:async()=>{}});
+const pendingCancellation=cancellingClient.start({runId:clientCancelId});await cancellingClient.cancel();const recoveredPartial=await pendingCancellation;
+assert.equal(clientStreamAborted,true);assert.equal(recoveredPartial.cancelled,true);assert.equal(recoveredPartial.answer,'partial LilyPond');assert.equal(cancellingClient.pendingRunId,'');
+console.log('PASS: the cancel button request aborts the browser stream and returns the saved partial composition.');
