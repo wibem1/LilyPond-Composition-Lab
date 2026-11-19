@@ -1,7 +1,7 @@
 const PENDING='lilypond-pending-run',EVENTS='lilypond-browser-events';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 export class RunClient{
- constructor({fetch:request=globalThis.fetch.bind(globalThis),storage=globalThis.localStorage,online=()=>globalThis.navigator?.onLine!==false,delay=sleep,onprogress=()=>{}}={}){Object.assign(this,{request,storage,online,delay,onprogress});this.flushing=null;this.memory=new Map();}
+ constructor({fetch:request=globalThis.fetch.bind(globalThis),storage=globalThis.localStorage,online=()=>globalThis.navigator?.onLine!==false,delay=sleep,onprogress=()=>{}}={}){Object.assign(this,{request,storage,online,delay,onprogress});this.flushing=null;this.memory=new Map();this.controller=null;this.cancelRequestedFor='';}
  read(key,fallback){if(this.memory.has(key))return this.memory.get(key);try{return JSON.parse(this.storage.getItem(key))??fallback;}catch{return fallback;}}
  write(key,value){this.memory.set(key,value);try{this.storage.setItem(key,JSON.stringify(value));}catch{}}
  get pendingRunId(){return this.read(PENDING,null)?.runId||'';}
@@ -12,11 +12,19 @@ export class RunClient{
   this.flushing=(async()=>{if(!this.online())return;const snapshot=this.read(EVENTS,[]);for(const runId of [...new Set(snapshot.map(e=>e.runId))]){const events=snapshot.filter(e=>e.runId===runId).slice(0,30);try{const r=await this.bounded('/api/client-events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId,events})},8000);if(r.ok){const sent=new Set(events.map(e=>e.date+'|'+e.event));this.write(EVENTS,this.read(EVENTS,[]).filter(e=>e.runId!==runId||!sent.has(e.date+'|'+e.event)));}}catch{}}})();
   try{await this.flushing;}finally{this.flushing=null;}
  }
- finish(status,result){this.write(PENDING,null);if((result?.compiled?.incomplete||result?.compiled?.error)&&typeof result.answer==='string')return result;if(status>=400||result.error){const e=Error(result.error||'Auftrag fehlgeschlagen.');e.details=result;e.terminal=true;throw e;}return result;}
+ finish(status,result){this.write(PENDING,null);this.controller=null;this.cancelRequestedFor='';if((result?.compiled?.incomplete||result?.compiled?.error)&&typeof result.answer==='string')return result;if(result?.cancelled){const e=Error('Komposition abgebrochen.');e.details=result;e.cancelled=true;e.terminal=true;throw e;}if(status>=400||result.error){const e=Error(result.error||'Auftrag fehlgeschlagen.');e.details=result;e.terminal=true;throw e;}return result;}
+ async cancel(){
+  const runId=this.pendingRunId;if(!runId)return false;
+  const response=await this.request('/api/run-cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId})});
+  const result=await response.json();
+  if(!response.ok||!result.accepted)throw Error(result.error||'Der laufende Auftrag kann nicht mehr abgebrochen werden.');
+  this.cancelRequestedFor=runId;this.onprogress('Abbruch angefordert. Der gespeicherte Notentext wird geprüft …');
+  this.controller?.abort();return true;
+ }
  async start(payload){
   if(this.pendingRunId)return this.recover(this.pendingRunId);
   this.write(PENDING,{runId:payload.runId,startedAt:new Date().toISOString()});
-  const controller=new AbortController();let timer,received=false;
+  const controller=new AbortController();this.controller=controller;this.onprogress('KI-Auftrag gestartet …');let timer,received=false;
   try{
    timer=setTimeout(()=>controller.abort(),30000);
    const r=await this.request('/api/run-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:controller.signal});clearTimeout(timer);
@@ -27,7 +35,7 @@ export class RunClient{
     while((newline=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,newline);buffer=buffer.slice(newline+1);if(!line.trim())continue;const event=JSON.parse(line);if(event.type==='result')return this.finish(event.status,event.result);if(event.phase)this.onprogress(event.phase);}
    }
    throw Error('Antwortstrom endete ohne Ergebnis.');
-  }catch(e){clearTimeout(timer);if(!this.pendingRunId)throw e;this.record(payload.runId,received?'stream_error':'network_error',e.message);this.onprogress('Verbindung unterbrochen. Gespeichertes Ergebnis wird abgeholt …');return this.recover(payload.runId);}
+  }catch(e){clearTimeout(timer);if(!this.pendingRunId)throw e;if(this.cancelRequestedFor!==payload.runId){this.record(payload.runId,received?'stream_error':'network_error',e.message);this.onprogress('Verbindung unterbrochen. Gespeichertes Ergebnis wird abgeholt …');}else this.onprogress('Abbruch angefordert. Der gespeicherte Notentext wird geprüft …');return this.recover(payload.runId);}
  }
  async recover(runId=this.pendingRunId){
   this.record(runId,'recovery_started');let missing=0,failures=0;
