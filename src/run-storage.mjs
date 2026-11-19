@@ -3,6 +3,7 @@ import {claimRun} from './run-claim.mjs';
 export function runStorage(bucket){
  const read=async name=>{const object=await bucket.get(name);return object?object.json():null;};
  const options={httpMetadata:{contentType:'application/json'}};
+ const cancelKey=id=>'run-cancellations/'+id+'.json';
  const create=async(name,state)=>Boolean(await bucket.put(name,JSON.stringify(state),{...options,onlyIf:new Headers({'If-None-Match':'*'})}));
  return {
   read,
@@ -13,6 +14,9 @@ export function runStorage(bucket){
    const state=await read('run-claims/'+id+'.json');
    return state&&!state.status?{...state,status:'running',phase:'Auftragsannahme wird geprüft',startedAt:state.claimedAt,updatedAt:state.claimedAt}:state;
   },
+  requestCancel:async id=>bucket.put(cancelKey(id),JSON.stringify({requestedAt:new Date().toISOString()}),options),
+  cancelRequested:async id=>Boolean(await bucket.get(cancelKey(id))),
+  clearCancel:async id=>bucket.delete(cancelKey(id)),
   replace:async(name,expected,value)=>{
    const object=await bucket.get(name);if(!object||JSON.stringify(await object.json())!==JSON.stringify(expected))return false;
    return Boolean(await bucket.put(name,JSON.stringify(value),{...options,onlyIf:{etagMatches:object.etag}}));
