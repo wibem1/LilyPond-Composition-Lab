@@ -1,6 +1,6 @@
 # LilyPond Composition Lab · V1.2.17
 
-Private WebApp für Computer, iPad und Android. Auftrag → KI → editierbarer LilyPond-Notentext → Partitur, Wiedergabe und Export. V1.2.17 ergänzt einen Abbruch für laufende KI-Aufträge; bereits empfangener Notentext bleibt gesichert. Die Veröffentlichung steht noch aus.
+Private WebApp für Computer, iPad und Android. Auftrag → KI → editierbarer LilyPond-Notentext → Partitur, Wiedergabe und Export. V1.2.17 ergänzt einen Abbruch für laufende KI-Aufträge; bereits empfangener Notentext bleibt gesichert.
 
 ## Arbeiten mit der App
 
