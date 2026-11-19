@@ -13,9 +13,9 @@ async function api(path,data,method){try{const r=await fetch(path,{method:method
 function payload(){return {...state,id:state.historyId,title:$('title').value,task:$('task').value,system:$('system').value,techout:$('code').value,draft:$('draft').value,workflow:$('workflow').value,format:'lilypond',tokens1:$('tokens').value,compositionReasoning:$('compositionReasoning').value,compositionModel:$('model').value||modelChoice,realisationModel:'',compiler:$('compiler').textContent};}
 function queueSave(){if(restoring)return;clearTimeout(timer);timer=setTimeout(()=>persist(),550);}
 function persist(){if(restoring||runClient.pendingRunId)return Promise.resolve();const workspace=payload();saveChain=saveChain.catch(()=>{}).then(()=>api('/api/workspace',{workspace})).then(async()=>{if(workspace.workflow==='concept'&&workspace.draft&&workspace.historyId)await api('/api/history',workspace);$('memoryStatus').textContent='Letzter Arbeitsstand gespeichert.'}).catch(e=>{$('memoryStatus').textContent='Arbeitsstand konnte nicht gespeichert werden: '+e.message;throw e});return saveChain;}
-function setBusy(v){busy=v;for(const id of ['compose','continueComposition','reviseComposition','code','title','correctComposition','compile','new','import','openHistory','deleteHistory','saveHistory','saveMusicXml','backupHistory','restoreHistory','workflow','provider','model','compositionReasoning','task','system','tokens','draft'])$(id).disabled=v;renderWorkflow();}
+function setBusy(v){busy=v;for(const id of ['compose','continueComposition','reviseComposition','code','title','correctComposition','compile','new','import','openHistory','deleteHistory','saveHistory','saveMusicXml','backupHistory','restoreHistory','workflow','provider','model','compositionReasoning','task','system','tokens','draft'])$(id).disabled=v;$('cancelComposition').hidden=!v||!runClient.pendingRunId;$('cancelComposition').disabled=false;renderWorkflow();}
 function message(s){$('status').textContent=s;}
-const runClient=new RunClient({onprogress:message});
+const runClient=new RunClient({onprogress:text=>{message(text);if(runClient.pendingRunId){$('cancelComposition').hidden=false;$('cancelComposition').disabled=false;}}});
 const fontCache=new SoundFontCache({onwarning:e=>runClient.record(state.runId,'soundfont_cache_error',e.message)});
 let preparedFont=null,preparedFontVersion='',fontPreparing=null;
 function prepareSoundFont(font){
@@ -100,11 +100,12 @@ async function generateIdea(){
  await persist();
  state={workflow:'concept',ideaStage:null,compositionStage:null,historyId:'',runId:crypto.randomUUID().replaceAll('-',''),costs:{composition:0,realisation:0},downloads:[],midiUrl:'',pages:[],compiler:''};
  $('draft').value='';$('code').value='';renderResults();message('Klangvorstellung wird entwickelt …');
- await acceptRunResult(await runClient.start({...requestInputs(),runId:state.runId,operation:'concept'}));}
+ const d=await runClient.start({...requestInputs(),runId:state.runId,operation:'concept'});await acceptRunResult(d);if(d.cancelled)message('Abgebrochen. Die bereits empfangene Klangvorstellung wurde gesichert.');}
  catch(e){message('Fehler: '+e.message);if(!runClient.pendingRunId)queueSave();}
  finally{setBusy(false);renderResults();}
 }
 $('continueComposition').onclick=()=>compose(true).catch(e=>message('Speichern: '+e.message));
+$('cancelComposition').onclick=async()=>{if(!runClient.pendingRunId)return;$('cancelComposition').disabled=true;message('Abbruch wird angefordert …');try{await runClient.cancel();}catch(e){$('cancelComposition').disabled=false;message('Abbruch nicht möglich: '+e.message);}};
 $('compose').onclick=()=>($('workflow').value==='concept'?generateIdea():compose(false)).catch(e=>message('Speichern: '+e.message));
 async function compose(continuing=false){
  if(busy)return;if(!$('model').value)return message('Bitte zuerst ein Modell auswählen.');
@@ -116,13 +117,15 @@ async function compose(continuing=false){
   await persist();
   const d=await runClient.start({...requestInputs(),runId:state.runId,workflow:continuing?'concept':'direct',historyId:state.historyId,draft:continuing?$('draft').value:''});
   await acceptRunResult(d);
-  message(d.compiled.incomplete?d.compiled.error:d.compiled.repairFailed?'Oktavkorrektur fehlgeschlagen. Das Stück ist weiterhin fehlerhaft.':d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
-  if(d.finish_reason==='length'&&!d.compiled.incomplete)message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
-  if(d.compiled.repair)message($('status').textContent+'\n'+d.compiled.repair);
-  if(d.titleWarning)message($('status').textContent+'\n'+d.titleWarning);
- if(d.compiled.warning)message($('status').textContent+'\n'+d.compiled.warning);
-  else if(d.compiled.rangeCheck?.status==='passed')message($('status').textContent+'\nTonumfangprüfung bestanden.');
- }catch(e){message('Fehler: '+e.message);if(e.details&&/Schlüssel|Anmeldung/.test(e.message)){$('connectionDetails').open=true;$('connection').scrollIntoView({behavior:'smooth'});$('keyStatus').textContent=e.message;}if(!runClient.pendingRunId)queueSave()}finally{setBusy(false);renderResults()}
+  message(d.cancelled?'Abgebrochen. Der bereits empfangene Notentext wurde gesichert.':d.compiled.incomplete?d.compiled.error:d.compiled.repairFailed?'Oktavkorrektur fehlgeschlagen. Das Stück ist weiterhin fehlerhaft.':d.compiled.error?'Code gespeichert. Compilerfehler: '+d.compiled.error:`Fertig · ${d.usage?.prompt_tokens??'?'} Eingabe- und ${d.usage?.completion_tokens??'?'} Ausgabetokens · ${(d.durationMs/1000).toFixed(1)} Sekunden.`);
+  if(!d.cancelled){
+   if(d.finish_reason==='length'&&!d.compiled.incomplete)message($('status').textContent+'\nAusgabelimit erreicht; Code möglicherweise unvollständig.');
+   if(d.compiled.repair)message($('status').textContent+'\n'+d.compiled.repair);
+   if(d.titleWarning)message($('status').textContent+'\n'+d.titleWarning);
+   if(d.compiled.warning)message($('status').textContent+'\n'+d.compiled.warning);
+   else if(d.compiled.rangeCheck?.status==='passed')message($('status').textContent+'\nTonumfangprüfung bestanden.');
+  }
+ }catch(e){message(e.cancelled?'Komposition abgebrochen. Es lag noch kein Notentext zum Sichern vor.':'Fehler: '+e.message);if(e.details&&/Schlüssel|Anmeldung/.test(e.message)){$('connectionDetails').open=true;$('connection').scrollIntoView({behavior:'smooth'});$('keyStatus').textContent=e.message;}if(!runClient.pendingRunId)queueSave()}finally{setBusy(false);renderResults()}
 };
 async function reviseComposition(operation){
  if(busy)return;
@@ -134,8 +137,8 @@ async function reviseComposition(operation){
   await saveHistory();
   const d=await runClient.start({...requestInputs(),operation,historyId:state.historyId,code,diagnostics:state.compilerNotice||'',runId:crypto.randomUUID().replaceAll('-','')});
   await acceptRunResult(d);
-  message(d.compiled.incomplete?d.compiled.error:d.compiled.error?'Neue Fassung gespeichert. Compilerfehler: '+d.compiled.error:d.compiled.warning?'Neue Fassung gespeichert. Hinweise: '+d.compiled.warning:'Neue Fassung gespeichert und geprüft. Das Original bleibt im Verlauf erhalten.');
- }catch(e){message('Bearbeitung fehlgeschlagen: '+e.message);}
+  message(d.cancelled?'Abgebrochen. Der bereits empfangene Notentext wurde gesichert.':d.compiled.incomplete?d.compiled.error:d.compiled.error?'Neue Fassung gespeichert. Compilerfehler: '+d.compiled.error:d.compiled.warning?'Neue Fassung gespeichert. Hinweise: '+d.compiled.warning:'Neue Fassung gespeichert und geprüft. Das Original bleibt im Verlauf erhalten.');
+ }catch(e){message(e.cancelled?'Komposition abgebrochen. Es lag noch kein Notentext zum Sichern vor.':'Bearbeitung fehlgeschlagen: '+e.message);}
  finally{setBusy(false);renderResults();}
 }
 $('reviseComposition').onclick=()=>reviseComposition('revise');
