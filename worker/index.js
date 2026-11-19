@@ -21,7 +21,7 @@ import {automaticOttava,sameMidiPerformance,removeGeneratedOttava} from '../src/
 import {expressionPlayback} from '../src/expression-playback.mjs';
 import {musicXmlCapture,capturedMusic} from '../src/musicxml-capture.mjs';
 import {musicXmlScore} from '../src/musicxml-export.mjs';
-import {streamRun,synchronousRun,readRunSession,noteRunProgress} from '../src/run-session.mjs';
+import {streamRun,synchronousRun,readRunSession,requestRunCancel,noteRunProgress} from '../src/run-session.mjs';
 import {runStorage} from '../src/run-storage.mjs';
 const randomUUID=()=>crypto.randomUUID();
 const ENSEMBLE_PATTERNS=[
@@ -47,7 +47,7 @@ function historyPublic(v){
     compositionModel:v.compositionModel||'',compositionReasoning:v.compositionReasoning||'',realisationModel:v.realisationModel||'',format:v.format||'',
     revisionMode:['revise','correct'].includes(v.revision?.mode)?v.revision.mode:'',workflow:v.workflow||'direct',hasDraft:!!v.draft,hasRealisation:!!v.techout,costs:compositionCosts(v.costs)};
 }
-async function upstream(url,init,timeout=185000){const ac=new AbortController();const t=setTimeout(()=>ac.abort(),timeout);try{return await fetch(url,{...init,signal:ac.signal});}finally{clearTimeout(t);}}
+async function upstream(url,init,timeout=185000){const ac=new AbortController();const t=setTimeout(()=>ac.abort(),timeout),signal=init.signal?AbortSignal.any([ac.signal,init.signal]):ac.signal;try{return await fetch(url,{...init,signal});}finally{clearTimeout(t);}}
 function contentType(file){if(file.endsWith('.musicxml'))return 'application/vnd.recordare.musicxml+xml; charset=utf-8';if(file.endsWith('.svg'))return 'image/svg+xml';if(file.endsWith('.mid'))return 'audio/midi';if(file.endsWith('.abc')||file.endsWith('.ly')||file.endsWith('.csv')||file.endsWith('.txt'))return 'text/plain; charset=utf-8';return 'application/octet-stream';}
 
 function ensureMidiDirective(text){
@@ -272,6 +272,10 @@ async function handle(req,env,ctx){
   const copy=new Request(req.url,{method:'POST',headers:req.headers,body:JSON.stringify(b)});
   return streamRun(copy,env,ctx,id,run,runIO);
  }
+ if(req.method==='POST'&&p==='/api/run-cancel'){
+  const b=await body(req),id=historyId(b.runId);if(!id)return json({error:'Ungültige Auftragskennung.'},400);
+  const result=await requestRunCancel(id,runIO);return json(result,result.accepted?202:409);
+ }
  if(req.method==='GET'&&p==='/api/run-status'){
   const id=historyId(url.searchParams.get('runId'));if(!id)return json({error:'Ungültige Auftragskennung.'},400);
   const session=await readRunSession(id,runIO);return session?json(session):json({status:'unknown',runId:id});
@@ -442,7 +446,7 @@ async function verifyScoreStructure(code,compiled){
   compiled.completeness=scoreCompleteness(capturedMusic(captured.logs));
  }catch(e){compiled.incomplete=true;compiled.error='Musikstruktur nicht bestätigt: '+e.message;}
 }
-async function runCompletion(b,env,runId,started){
+async function runCompletion(b,env,runId,started,signal){
  let key='',entry=null,answer='',usage=null,finish='interrupted',actualModel='',cost=0;
  try{
   const id=historyId(b.historyId),original=id?await getJson(env,'history/'+id+'.json'):null;
@@ -458,7 +462,7 @@ async function runCompletion(b,env,runId,started){
   await saveHistory(env,entry);
   await log(env,'anfrage',runId,{stage:'realisation',operation:'complete',model,messages,max_tokens,originalHistoryId:id,reasoning_requested:reasoning||'provider_default'});
   const input={operation:'complete',model,compositionReasoning:quality,task:original.task,title:original.title,code,originalHistoryId:id};
-  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens,stream:true,usage:{include:true},...(reasoning?{reasoning}:{})})});rejectRedirect(r);
+  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',signal,body:JSON.stringify({model,messages,max_tokens,stream:true,usage:{include:true},...(reasoning?{reasoning}:{})})});rejectRedirect(r);
   const response=await readCompositionResponse(r,{checkpoint:response=>putJson(env,'checkpoints/'+runId+'.json',{input,response,updatedAt:new Date().toISOString()})});
   if(!r.ok)throw Error(response.error?.message||'OpenRouter HTTP '+r.status);
   answer=response.choices?.[0]?.message?.content||'';if(Array.isArray(answer))answer=answer.filter(x=>x.type==='text').map(x=>x.text).join('');
@@ -494,7 +498,7 @@ async function runCompletion(b,env,runId,started){
  }
 }
 
-async function runConcept(b,env,runId,started){
+async function runConcept(b,env,runId,started,signal){
  let key='';
  try{
   const task=clean(b.task).trim(),model=clean(b.model).trim(),quality=qualityChoice(b.compositionReasoning);
@@ -502,7 +506,7 @@ async function runConcept(b,env,runId,started){
   key=normalizeKey(b.key||await storedKey(env));await checkKey(key);
   const messages=ideaMessages(task,clean(b.system)),reasoning=reasoningFor(quality,model),max_tokens=Math.min(8000,Math.max(500,Number(b.maxTokens)||8000));
   await log(env,'anfrage',runId,{stage:'composition',operation:'concept',model,messages,max_tokens,reasoning_requested:reasoning||'provider_default'});
-  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens,stream:false,usage:{include:true},...(reasoning?{reasoning}:{})})});
+  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',signal,body:JSON.stringify({model,messages,max_tokens,stream:false,usage:{include:true},...(reasoning?{reasoning}:{})})});
   rejectRedirect(r);const response=await r.json();if(!r.ok){const e=Error(response.error?.message||'OpenRouter HTTP '+r.status);e.status=r.status;throw e;}
   let answer=response.choices?.[0]?.message?.content;if(Array.isArray(answer))answer=answer.filter(x=>x.type==='text').map(x=>x.text).join('\n');answer=typeof answer==='string'?answer.trim():'';
   const usage=response.usage||null,finishReason=response.choices?.[0]?.finish_reason||'',durationMs=Date.now()-started;
@@ -515,7 +519,7 @@ async function runConcept(b,env,runId,started){
  }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{operation:'concept',error,durationMs:Date.now()-started});return json({error,runId},e.status===401?401:502);}
 }
 
-async function runCorrection(b,env,runId,started){
+async function runCorrection(b,env,runId,started,signal){
  let key='';const operation=b.operation;
  try{
   const code=clean(b.code),model=clean(b.model).trim(),id=historyId(b.historyId);
@@ -532,7 +536,7 @@ async function runCorrection(b,env,runId,started){
   const messages=operation==='repair'?correctionMessages(task,system,code,notes):revisionMessages({mode:operation,system,code,instructions:task,diagnostics:notes});
   const max_tokens=Math.min(64000,Math.max(500,Number(b.maxTokens)||64000)),reasoning=reasoningFor(quality,model);
   await log(env,'anfrage',runId,{stage:'realisation',operation,model,messages,max_tokens,originalHistoryId:id,source:code,reasoning_requested:reasoning||'provider_default'});
-  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages,max_tokens,stream:true,usage:{include:true},...(reasoning?{reasoning}:{})})});rejectRedirect(r);
+  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',signal,body:JSON.stringify({model,messages,max_tokens,stream:true,usage:{include:true},...(reasoning?{reasoning}:{})})});rejectRedirect(r);
   const response=await readCompositionResponse(r,{checkpoint:response=>putJson(env,'checkpoints/'+runId+'.json',{input:{operation,model,task,title:original.title,compositionReasoning:quality,originalHistoryId:id},response,updatedAt:new Date().toISOString()})});if(!r.ok)throw Error(response.error?.message||'OpenRouter HTTP '+r.status);
   let answer=response.choices?.[0]?.message?.content;if(Array.isArray(answer))answer=answer.filter(x=>x.type==='text').map(x=>x.text).join('\n');answer=typeof answer==='string'?answer:'';
   const usage=response.usage||null,finish=response.error?'error':response.choices?.[0]?.finish_reason||null,actualModel=clean(response.model)||model,cost=Number(usage?.cost)||0;
@@ -556,11 +560,11 @@ async function runCorrection(b,env,runId,started){
  }catch(e){const error=String(e.message||e).replaceAll(key||'\u0000','[API-Schlüssel]');await log(env,'fehler',runId,{operation,error});return json({error,runId},e.status===401?401:e.status===400?400:502)}
 }
 
-async function run(req,env){
+async function run(req,env,signal){
  const b=await body(req),runId=safe(b.runId||randomUUID().replaceAll('-','')),started=Date.now();
- if(b.operation==='complete')return runCompletion(b,env,runId,started);
- if(['repair','revise','correct'].includes(b.operation))return runCorrection(b,env,runId,started);
- if(b.operation==='concept')return runConcept(b,env,runId,started);
+ if(b.operation==='complete')return runCompletion(b,env,runId,started,signal);
+ if(['repair','revise','correct'].includes(b.operation))return runCorrection(b,env,runId,started,signal);
+ if(b.operation==='concept')return runConcept(b,env,runId,started,signal);
  let key='',conceptEntry=null;
  try{
   if(b.workflow==='concept'){
@@ -584,7 +588,7 @@ async function run(req,env){
   const reasoning=reasoningFor(compositionReasoning,model);
   const payload={model,messages,max_tokens,stream:true,usage:{include:true},...(reasoning?{reasoning}:{})};
   await log(env,'anfrage',runId,{stage:'composition',model,title:clean(b.title),max_tokens,messages,reasoning_requested:reasoning||'provider_default'});
-  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify(payload)});
+  const r=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',signal,body:JSON.stringify(payload)});
   rejectRedirect(r);
   const checkpointInput={task,system,model,compositionReasoning,maxTokens:max_tokens,title:clean(b.title),historyId:conceptEntry?.id||'',workflow:conceptEntry?'concept':'direct',draft:conceptEntry?.draft||'',ideaStage:conceptEntry?.ideaStage||null};
   const response=await readCompositionResponse(r,{checkpoint:response=>putJson(env,'checkpoints/'+runId+'.json',{input:checkpointInput,response,updatedAt:new Date().toISOString()})});
@@ -622,7 +626,7 @@ async function run(req,env){
     const namingStarted=Date.now();
     await log(env,'anfrage',runId,{stage:'composition',operation:'title',attempt,model,messages:namingMessages,max_tokens:1000});
     try{
-     const nr=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',body:JSON.stringify({model,messages:namingMessages,max_tokens:1000,stream:false,usage:{include:true}})},30000);
+     const nr=await upstream('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:routerHeaders(key),redirect:'manual',signal,body:JSON.stringify({model,messages:namingMessages,max_tokens:1000,stream:false,usage:{include:true}})},30000);
      rejectRedirect(nr);
      const nd=await nr.json();
      if(!nr.ok)throw Error('Titelanfrage fehlgeschlagen (HTTP '+nr.status+').');

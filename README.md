@@ -1,11 +1,11 @@
-# LilyPond Composition Lab · V1.2.16
+# LilyPond Composition Lab · V1.2.17
 
-Private WebApp für Computer, iPad und Android. Auftrag → KI → editierbarer LilyPond-Notentext → Partitur, Wiedergabe und Export. Versionsdatum: 26.10.2026. V1.2.16 korrigiert das SoundFont-Vorladen auf Safari/iPad und prüft die Wiederherstellung des zuletzt gespeicherten SoundFonts beim erneuten Öffnen. [Umfang und Prüfung](docs/release-1.2.16.md).
+Private WebApp für Computer, iPad und Android. Auftrag → KI → editierbarer LilyPond-Notentext → Partitur, Wiedergabe und Export. V1.2.17 ergänzt einen Abbruch für laufende KI-Aufträge; bereits empfangener Notentext bleibt gesichert.
 
 ## Arbeiten mit der App
 
 - **Komponieren:** Modell aus dem aktuellen OpenRouter-Katalog wählen, Auftrag eingeben und komponieren. Denkaufwand, eigene Vorgaben und Tokenbudget bleiben einstellbar.
-- **Abgebrochene Komposition:** Empfangener Notentext wird während der Übertragung gesichert. Nach einem Verbindungsabbruch wird derselbe Auftrag abgeholt. Fragmente können mit den allgemeinen Bearbeitungsfunktionen erneut an die KI geschickt werden; das Original bleibt als eigene Fassung erhalten.
+- **Abgebrochene Komposition:** Mit „Abbrechen“ wird der laufende KI-Auftrag beendet; bereits empfangener Notentext bleibt gesichert. Bei einem bloßen Verbindungsabbruch wird derselbe Auftrag abgeholt. Fragmente können mit den allgemeinen Bearbeitungsfunktionen erneut an die KI geschickt werden; das Original bleibt als eigene Fassung erhalten.
 - **Komposition überarbeiten:** Den Änderungswunsch in das vorhandene Feld „Kompositionsauftrag“ schreiben. Der Button schickt ihn zusammen mit dem aktuellen Notentext an das gewählte Modell.
 - **Korrigiere die Komposition:** Die KI prüft das ganze Stück selbstständig auf technische und musikalische Schwächen. Der Text im Auftragsfeld wird dabei nicht als Änderungswunsch verwendet. Kein Chat, kein zusätzliches Eingabefeld. Beide Bearbeitungen speichern eine neue Fassung mit Modell und Kosten; das Original bleibt erhalten.
 - **Optional mit Idee:** Eine kurze Klangvorstellung zuerst prüfen und bearbeiten, anschließend zum vollständigen Stück ausarbeiten lassen.

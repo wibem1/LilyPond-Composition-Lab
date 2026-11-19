@@ -10,6 +10,7 @@ const io={...storage,log:async()=>{}};
 const execute=async()=>{calls++;await gate;return Response.json({answer:'one result'});};
 const id='1234567890abcdef',start=module=>module.streamRun(new Request('https://test/run-stream'),{},{waitUntil:task=>tasks.push(task)},id,execute,io);
 const responses=await Promise.all([start(first),start(second)]);
+for(let i=0;calls===0&&i<10;i++)await new Promise(resolve=>setTimeout(resolve,0));
 assert.equal(calls,1,'independent isolates must acquire the same durable claim');
 release();await Promise.all(tasks);
 const bodies=await Promise.all(responses.map(response=>response.text()));

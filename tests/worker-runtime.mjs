@@ -14,6 +14,13 @@ export default {async fetch(req,env,ctx){
  const url=new URL(req.url),id=url.searchParams.get('id')||'runtime-test';
  const io={...runStorage(env.BUCKET),log:async()=>{}};
  if(url.pathname==='/status')return Response.json(await readRunSession(id,io));
+ if(url.pathname==='/cancel-marker'){
+  await io.requestCancel(id);return Response.json({requested:true});
+ }
+ if(url.pathname==='/cancelable')return streamRun(req,env,ctx,id,async(_request,_bindings,signal)=>{
+  await new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true}));
+  return Response.json({answer:'should not finish'});
+ },io);
  if(url.pathname==='/conditional'){
   const state={status:'running',updatedAt:new Date().toISOString()};
   const claims=await Promise.all([io.claim(id,state),io.claim(id,state)]);
@@ -61,6 +68,15 @@ try{
  assert.deepEqual(sync.map(r=>r.status).sort(),[200,409]);
  assert.equal((await (await runtime.dispatchFetch('https://test/sync?id=sync-once',{method:'POST'})).json()).answer,'sync once');
  assert.equal((await (await bucket.get('count/sync-once')).json()).n,1);
+ const cancelId='remote-cancel',cancelResponse=await runtime.dispatchFetch('https://test/cancelable?id='+cancelId,{method:'POST'}),cancelReader=cancelResponse.body.getReader();
+ assert.match(new TextDecoder().decode((await cancelReader.read()).value),/started/);
+ await runtime.dispatchFetch('https://test/cancel-marker?id='+cancelId,{method:'POST'});
+ let cancelState;const cancelDeadline=Date.now()+5000;
+ do{const object=await bucket.get('runs/'+cancelId+'.json');cancelState=object?await object.json():null;if(cancelState?.status==='failed')break;await new Promise(r=>setTimeout(r,50));}while(Date.now()<cancelDeadline);
+ assert.equal(cancelState?.httpStatus,499);assert.equal(cancelState?.result?.cancelled,true);
+ let cancelOutput='';for(;;){const part=await cancelReader.read();if(part.done)break;cancelOutput+=new TextDecoder().decode(part.value)}
+ assert.match(cancelOutput,/"type":"result"/);assert.equal(await bucket.get('run-cancellations/'+cancelId+'.json'),null);
+ console.log('PASS: actual workerd/local R2 cancellation marker reaches another active worker session and ends the execution.');
  console.log('PASS: synchronous duplicate protection and replay in actual workerd/local R2.');
  console.log('PASS: actual workerd/local R2 conditional reservation, stale-write protection, SSE idle checkpoint and short-disconnect recovery without duplicate execution. Long-disconnect continuation remains unsupported.');
 }finally{await runtime.dispose();}

@@ -35,12 +35,20 @@ export async function readRunSession(runId,io){
  }
  return state;
 }
+export async function requestRunCancel(runId,io){
+ const state=await readRunSession(runId,io);
+ if(!state||state.status!=='running')return {accepted:false,status:state?.status||'unknown'};
+ await io.requestCancel?.(runId);
+ active.get(runId)?.cancel();
+ return {accepted:true,status:'running'};
+}
 export async function streamRun(request,env,ctx,runId,execute,io){
  if(starting.has(runId)||active.has(runId))return Response.json({runId,resume:true},{headers:{'Cache-Control':'no-store'}});
  starting.add(runId);
  let existing;try{existing=await readRunSession(runId,io);}catch(e){starting.delete(runId);throw e;}
  if(existing){starting.delete(runId);return Response.json({runId,resume:true},{headers:{'Cache-Control':'no-store'}});}
- let controller,cancelled=false;
+ let controller,cancelled=false,abortRequested=false,cancelCheck=null;
+ const runController=new AbortController();
  const state={runId,status:'running',phase:'Verbindung und Compiler werden geprüft',startedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
  if(io.claim){
   try{if(!await io.claim(runId,state)){starting.delete(runId);return Response.json({runId,resume:true},{headers:{'Cache-Control':'no-store'}});}}
@@ -51,30 +59,42 @@ export async function streamRun(request,env,ctx,runId,execute,io){
  const send=value=>{if(cancelled||!controller)return;try{controller.enqueue(new TextEncoder().encode(JSON.stringify(value)+'\n'));}catch{cancelled=true;}};
  try{await persist();}catch(e){starting.delete(runId);throw e;}
  const stream=new ReadableStream({start(c){controller=c;send({type:'started',runId,phase:state.phase});},cancel(){cancelled=true;io.log('verbindung_getrennt',runId,{source:'server-stream',message:'Browser liest die Antwort nicht mehr; Ergebnis wird nach Möglichkeit weiter gespeichert.'}).catch(()=>{});}});
- const session={state,send};active.set(runId,session);starting.delete(runId);
+ const cancel=()=>{
+  if(abortRequested)return;
+  abortRequested=true;state.cancelRequested=true;state.phase='Abbruch wird ausgeführt';
+  send({type:'progress',phase:state.phase});persist().catch(()=>{});runController.abort();
+  io.log('abbruch_angefordert',runId,{source:'user'}).catch(()=>{});
+ };
+ const session={state,send,cancel};active.set(runId,session);starting.delete(runId);
+ const cancelPoll=setInterval(()=>{
+  if(cancelCheck||abortRequested||!io.cancelRequested)return;
+  cancelCheck=(async()=>{if(await io.cancelRequested(runId))cancel();})().catch(()=>{}).finally(()=>{cancelCheck=null;});
+ },1000);
  const timer=setInterval(()=>{send({type:'heartbeat',phase:state.phase});persist().catch(()=>{});},10000);
  const work=(async()=>{
   try{
    await io.log('lauf_gestartet',runId,{transport:'ndjson-heartbeat',heartbeatSeconds:10});
-   const response=await execute(request,env);const result=await response.json();
+   if(await io.cancelRequested?.(runId))cancel();
+   const response=await execute(request,env,runController.signal);const result=await response.json();
    const incomplete=Boolean(result?.compiled?.incomplete||result?.compiled?.error);
    state.status=response.ok&&!incomplete?'completed':'failed';state.httpStatus=incomplete?422:response.status;state.result=result;state.phase=incomplete?'Unvollständige Komposition gesichert':response.ok?'Abgeschlossen':'Fehlgeschlagen';
-  }catch(e){state.status='failed';state.httpStatus=500;state.result={runId,error:'Serververarbeitung fehlgeschlagen.'};state.phase='Fehlgeschlagen';await io.log('lauf_fehler',runId,{name:e.name,message:'Fehler außerhalb der Kompositionsverarbeitung.'}).catch(()=>{});}
+  }catch(e){state.status='failed';state.httpStatus=abortRequested?499:500;state.result={runId,cancelled:abortRequested,error:abortRequested?'Komposition abgebrochen.':'Serververarbeitung fehlgeschlagen.'};state.phase=abortRequested?'Abgebrochen':'Fehlgeschlagen';await io.log(abortRequested?'lauf_abgebrochen':'lauf_fehler',runId,{name:e.name,message:abortRequested?'Anfrage nach Abbruch beendet.':'Fehler außerhalb der Kompositionsverarbeitung.'}).catch(()=>{});}
   finally{
-   clearInterval(timer);
+   clearInterval(timer);clearInterval(cancelPoll);
    try{
     // A failed parser/compiler/storage step must not hide an earlier checkpoint.
-    if(state.result?.error&&io.restore){
+    if((state.result?.error||abortRequested)&&io.restore){
      const partial=await io.restore(runId).catch(()=>null);
-     if(partial){state.result=partial;state.httpStatus=422;state.phase='Unvollständige Komposition gesichert';}
+     if(partial){state.result={...partial,cancelled:abortRequested};state.httpStatus=abortRequested?499:422;state.phase=abortRequested?'Abgebrochen · Notentext gesichert':'Unvollständige Komposition gesichert';}
     }
+    if(abortRequested&&!state.result?.compiled?.incomplete){state.status='failed';state.httpStatus=499;state.result={...(state.result||{}),runId,cancelled:true,error:'Komposition abgebrochen.'};state.phase='Abgebrochen';}
     await persist();
     // Diagnosis logging is not part of the result commit.
     await io.log('lauf_abgeschlossen',runId,{status:state.status,httpStatus:state.httpStatus,durationMs:Date.now()-Date.parse(state.startedAt)}).catch(()=>{});
     send({type:'result',status:state.httpStatus,result:state.result});
    }catch{
     send({type:'progress',phase:'Ergebnis konnte nicht bestätigt werden. Gespeicherter Auftrag wird erneut abgefragt.'});
-   }finally{active.delete(runId);if(!cancelled)try{controller.close();}catch{}}
+   }finally{active.delete(runId);try{await io.clearCancel?.(runId);}catch{}if(!cancelled)try{controller.close();}catch{}}
   }
  })();
  ctx?.waitUntil?.(work);
@@ -84,8 +104,8 @@ export async function streamRun(request,env,ctx,runId,execute,io){
 // Legacy JSON clients use the same durable reservation as streaming clients.
 export async function synchronousRun(request,env,ctx,runId,execute,io){
  let response;
- const stream=await streamRun(request,env,ctx,runId,async(req,bindings)=>{
-  const result=await execute(req,bindings);response=result.clone();return result;
+ const stream=await streamRun(request,env,ctx,runId,async(req,bindings,signal)=>{
+  const result=await execute(req,bindings,signal);response=result.clone();return result;
  },io);
  // Drain heartbeats so execution and final persistence finish before JSON return.
  await stream.text();
