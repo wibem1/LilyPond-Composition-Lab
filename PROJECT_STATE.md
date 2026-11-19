@@ -6,7 +6,8 @@ Stand: 19.11.2026 · **V1.2.17 in Entwicklung; nicht veröffentlicht**
 - Aktueller geprüfter Produktstand: V1.2.16; Sites-Version 63 mit Quellcommit `2a62345c13251cb08a0635c17e6e4334046e8680`.
 - Implementiert: Abbruchknopf während laufender KI-Aufträge, Abbruchsignal bis zum OpenRouter-Aufruf, Statusprüfung über den vorhandenen R2-Speicher für Worker-Isolate und Sicherung bereits empfangener Notentext-Fragmente.
 - Prüfstatus: Build und Integrationstests für V1.2.17 stehen aus; deshalb nicht freigegeben und nicht veröffentlicht.
-- Nächster Schritt: gezielte Prüfung des Abbruchpfads einschließlich realem Worker-/R2-Verhalten; danach Projektquellen synchronisieren und nur bei bestandenem Nachweis veröffentlichen.
+- GitHub-Stand: Feature-Branch `feat/cancel-composition-20261119`, Draft-PR #5 gegen `audit/code-review-20261026`.
+- Nächster Schritt: Abbruchpfad einschließlich Worker-/R2-Verhalten prüfen; nach bestandenem Nachweis kann V1.2.17 veröffentlicht werden.
 
 
 ## V1.2.16 · SoundFont auf Safari und Wiederherstellung
